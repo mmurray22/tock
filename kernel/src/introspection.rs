@@ -12,10 +12,10 @@
 
 use core::cell::Cell;
 
-use crate::callback::AppId;
 use crate::capabilities::ProcessManagementCapability;
 use crate::common::cells::NumericCellExt;
 use crate::process;
+use crate::process::AppId;
 use crate::sched::Kernel;
 
 /// This struct provides the inspection functions.

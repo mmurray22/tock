@@ -38,8 +38,9 @@
 //! While drivers do not handle the `yield` system call, it is important to
 //! understand its function and how it interacts with `subscribe`.
 
-use crate::callback::{AppId, Callback};
+use crate::callback::Callback;
 use crate::mem::{AppSlice, Shared};
+use crate::process::AppId;
 use crate::returncode::ReturnCode;
 
 /// `Driver`s implement the three driver-specific system calls: `subscribe`,

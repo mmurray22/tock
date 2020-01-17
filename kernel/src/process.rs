@@ -1,11 +1,12 @@
 //! Support for creating and running userspace applications.
 
 use core::cell::Cell;
+use core::fmt;
 use core::fmt::Write;
 use core::ptr::write_volatile;
 use core::{mem, ptr, slice, str};
 
-use crate::callback::{AppId, CallbackId};
+use crate::callback::CallbackId;
 use crate::capabilities::ProcessManagementCapability;
 use crate::common::cells::MapCell;
 use crate::common::{Queue, RingBuffer};
@@ -239,6 +240,82 @@ pub trait ProcessType {
 
     /// Increment the number of times the process called a syscall.
     fn debug_syscall_called(&self);
+}
+
+/// Userspace app identifier.
+///
+/// This identifier is a convenience mechanism for being able to refer to a
+/// process without the complexity of having a reference to the actual `Process`
+/// object.
+///
+/// The link between the `AppId` and the actual `Process` is currently just a
+/// number. Each `Process` keeps track of its number (typically referred to as
+/// the "process identifier") in its object struct. An `AppId` is linked to a
+/// process by keeping a copy of this identifier.
+///
+/// It is entirely possible that during the kernel's execution an `AppId` exists
+/// that contains a process number that refers to a process that no longer
+/// exists. This is expected, and requires that `AppId` cannot be used to
+/// directly refer to a process. All uses of `AppId` to get access to the
+/// `Process` must go through a check to verify there is a process associated
+/// with that `AppId`. Typically this happens in a loop in a function in
+/// sched.rs.
+///
+/// Since `AppId` is so closely tied to `Process`, the constructor (`new()`) is
+/// private and only processes can make an `AppId` object that refers to
+/// themselves.
+#[derive(Clone, Copy)]
+pub struct AppId {
+    crate kernel: &'static Kernel,
+    idx: usize,
+}
+
+impl PartialEq for AppId {
+    fn eq(&self, other: &AppId) -> bool {
+        self.idx == other.idx
+    }
+}
+
+impl Eq for AppId {}
+
+impl fmt::Debug for AppId {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.idx)
+    }
+}
+
+impl AppId {
+    /// Create a new `AppId` reference for a process. This is private as only
+    /// processes can make `AppId`s for themselves.
+    fn new(kernel: &'static Kernel, idx: usize) -> AppId {
+        AppId {
+            kernel: kernel,
+            idx: idx,
+        }
+    }
+
+    /// Retrieve the internal identifier for the process referred to by this
+    /// `AppId`.
+    ///
+    /// This should generally not be used.
+    ///
+    /// However, the IPC implementation currently relies on it so we make it
+    /// available.
+    pub fn idx(&self) -> usize {
+        self.idx
+    }
+
+    /// Returns the full address of the start and end of the flash region that
+    /// the app owns and can write to. This includes the app's code and data and
+    /// any padding at the end of the app. It does not include the TBF header,
+    /// or any space that the kernel is using for any potential bookkeeping.
+    pub fn get_editable_flash_range(&self) -> (usize, usize) {
+        self.kernel.process_map_or((0, 0), *self, |process| {
+            let start = process.flash_non_protected_start() as usize;
+            let end = process.flash_end() as usize;
+            (start, end)
+        })
+    }
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]

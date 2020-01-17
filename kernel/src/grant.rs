@@ -5,8 +5,7 @@ use core::mem::{align_of, size_of};
 use core::ops::{Deref, DerefMut};
 use core::ptr::{write, write_volatile, Unique};
 
-use crate::callback::AppId;
-use crate::process::{Error, ProcessType};
+use crate::process::{AppId, Error, ProcessType};
 use crate::sched::Kernel;
 
 /// Region of process memory reserved for the kernel.

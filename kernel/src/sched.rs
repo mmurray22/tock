@@ -3,7 +3,7 @@
 use core::cell::Cell;
 use core::ptr::NonNull;
 
-use crate::callback::{AppId, Callback, CallbackId};
+use crate::callback::{Callback, CallbackId};
 use crate::capabilities;
 use crate::common::cells::NumericCellExt;
 use crate::common::dynamic_deferred_call::DynamicDeferredCall;
@@ -13,7 +13,7 @@ use crate::memop;
 use crate::platform::mpu::MPU;
 use crate::platform::systick::SysTick;
 use crate::platform::{Chip, Platform};
-use crate::process::{self, Task};
+use crate::process::{self, AppId, Task};
 use crate::returncode::ReturnCode;
 use crate::syscall::{ContextSwitchReason, Syscall};
 
@@ -167,6 +167,27 @@ impl Kernel {
     /// Create a new unique identifier for a process and return the identifier.
     crate fn create_process_identifier(&self) -> usize {
         self.process_identifier_max.get_and_increment()
+    }
+
+    /// Find a process based on its process identifier and retrieve its `AppId`.
+    ///
+    /// The authoritative source of which process identifiers are valid and map
+    /// to which processes is held in the state of the each process struct.
+    /// Therefore, we must iterate processes until we find one which matches the
+    /// same process identifier.
+    crate fn lookup_process_identifier(&self, process_identifier: usize) -> Option<AppId> {
+        // Find a process that has the same identifier and return its `AppId`.
+        // If one cannot be found, return `None`.
+        self.processes.iter().find_map(|&p| {
+            p.map_or(None, |p2| {
+                let appid = p2.appid();
+                if process_identifier == appid.idx() {
+                    Some(appid)
+                } else {
+                    None
+                }
+            })
+        })
     }
 
     /// Create a new grant. This is used in board initialization to setup grants

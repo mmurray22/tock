@@ -3,12 +3,13 @@
 //! This is a special syscall driver that allows userspace applications to
 //! share memory.
 
-use crate::callback::{AppId, Callback};
+use crate::callback::Callback;
 use crate::capabilities::MemoryAllocationCapability;
 use crate::driver::Driver;
 use crate::grant::{Borrowed, Grant};
 use crate::mem::{AppSlice, Shared};
 use crate::process;
+use crate::process::AppId;
 use crate::returncode::ReturnCode;
 use crate::sched::Kernel;
 
@@ -238,17 +239,24 @@ impl Driver for IPC {
             IPCCallbackType::Client
         };
 
-        self.data.kernel.process_map_or(
-            ReturnCode::EINVAL,
-            AppId::new(self.data.kernel, target_id - 1),
-            |target| {
-                let ret = target.enqueue_task(process::Task::IPC((appid, cb_type)));
-                match ret {
-                    true => ReturnCode::SUCCESS,
-                    false => ReturnCode::FAIL,
-                }
-            },
-        )
+        let target_proc_identifier = target_id - 1;
+
+        // First get the AppId for the process being notified.
+        self.data
+            .kernel
+            .lookup_process_identifier(target_proc_identifier)
+            .map_or(ReturnCode::EINVAL, |target| {
+                // Now we can register the notify in that process's queue.
+                self.data
+                    .kernel
+                    .process_map_or(ReturnCode::EINVAL, target, |p| {
+                        let ret = p.enqueue_task(process::Task::IPC((appid, cb_type)));
+                        match ret {
+                            true => ReturnCode::SUCCESS,
+                            false => ReturnCode::FAIL,
+                        }
+                    })
+            })
     }
 
     /// allow enables processes to discover IPC services on the platform or

@@ -33,13 +33,14 @@ mod returncode;
 mod sched;
 mod tbfheader;
 
-pub use crate::callback::{AppId, Callback};
+pub use crate::callback::Callback;
 pub use crate::driver::Driver;
 pub use crate::grant::Grant;
 pub use crate::mem::{AppPtr, AppSlice, Private, Shared};
 pub use crate::platform::systick::SysTick;
 pub use crate::platform::{mpu, Chip, Platform};
 pub use crate::platform::{ClockInterface, NoClockControl, NO_CLOCK_CONTROL};
+pub use crate::process::AppId;
 pub use crate::returncode::ReturnCode;
 pub use crate::sched::Kernel;
 

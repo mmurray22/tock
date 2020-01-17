@@ -5,7 +5,7 @@ use core::ops::{Deref, DerefMut};
 use core::ptr::Unique;
 use core::slice;
 
-use crate::callback::AppId;
+use crate::process::AppId;
 
 /// Type for specifying an AppSlice is hidden from the kernel.
 #[derive(Debug)]
