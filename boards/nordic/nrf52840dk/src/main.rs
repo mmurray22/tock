@@ -112,6 +112,8 @@ static mut APP_MEMORY: [u8; 245760] = [0; 245760];
 static mut PROCESSES: [Option<&'static dyn kernel::procs::ProcessType>; NUM_PROCS] =
     [None, None, None, None, None, None, None, None];
 
+
+
 /// Dummy buffer that causes the linker to reserve enough space for the stack.
 #[no_mangle]
 #[link_section = ".stack_buffer"]
@@ -290,7 +292,7 @@ pub unsafe fn reset_handler() {
     }
 
     let board_kernel = static_init!(kernel::Kernel, kernel::Kernel::new(&PROCESSES));
-
+    
     nrf52dk_base::setup_board(
         board_kernel,
         BUTTON_RST_PIN,
