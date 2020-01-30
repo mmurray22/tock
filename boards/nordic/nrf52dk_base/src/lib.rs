@@ -21,6 +21,8 @@ pub mod nrf52_components;
 use nrf52_components::ble::BLEComponent;
 use nrf52_components::ieee802154::Ieee802154Component;
 
+mod qdec_test;
+
 // Constants related to the configuration of the 15.4 network stack
 const SRC_MAC: u16 = 0xf00f;
 const PAN_ID: u16 = 0xABCD;
@@ -427,6 +429,7 @@ pub unsafe fn setup_board(
         DynamicDeferredCall::new(dynamic_deferred_call_clients)
     );
     DynamicDeferredCall::set_global_instance(dynamic_deferred_call);
+    let qdec_test = qdec_test::initialize_all(mux_alarm);
 
     let platform = Platform {
         button: button,
@@ -446,6 +449,9 @@ pub unsafe fn setup_board(
 
     debug!("Initialization complete. Entering main loop\r");
     debug!("{}", &nrf52::ficr::FICR_INSTANCE);
+
+    qdec_test.start();
+    debug!("Started QDEC");
 
     extern "C" {
         /// Beginning of the ROM region containing app images.

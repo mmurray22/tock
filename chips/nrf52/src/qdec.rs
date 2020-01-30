@@ -1,35 +1,35 @@
-//!  QDEC driver, nRF5x-family
+//!  Qdec driver, nRF5x-family
 //!  set_client(), enable, get_ticks,
-//!  The nRF5x quadrature decoder 
+//!  The nRF5x quadrature decoder
 //!
 
-
 use kernel::common::cells::OptionalCell;
-use kernel::common::registers::{self, register_bitfields, ReadOnly, ReadWrite, ReadOnly};
+use kernel::common::registers::{
+    self, register_bitfields, register_structs, ReadOnly, ReadWrite, WriteOnly,
+};
 use kernel::common::StaticRef;
 use kernel::hil;
+use kernel::ReturnCode;
 
-
-//! In this section I declare a struct called QDECRegisters, which contains all the 
-//! relevant registers as outlined in the Nordic 5x specification of the QDEC.
-//! TODO: add in missing registers; TODO: add in register reserves
+// In this section I declare a struct called QdecRegisters, which contains all the
+// relevant registers as outlined in the Nordic 5x specification of the Qdec.
+// TODO: add in missing registers; TODO: add in register reserves
 register_structs! {
-    struct QDEC {
-        /// Start QDEC sampling
+    pub QdecRegisters {
+        /// Start Qdec sampling
         (0x000 => tasks_start: WriteOnly<u32, Task::Register>),
-        /// Stop QDEC sampling
+        /// Stop Qdec sampling
         (0x004 => tasks_stop: WriteOnly<u32, Task::Register>),
         /// Read and clear ACC and ACCDBL
-        (0x008 => tasks_readclracc: ReadWrite<u32, Task::Register>),
+        (0x008 => tasks_readclracc: WriteOnly<u32, Task::Register>),
         /// Read and clear ACC
-        (0x00C => tasks_rdclracc: ReadWrite<u32, Task::Register>),
+        (0x00C => tasks_rdclracc: WriteOnly<u32, Task::Register>),
         /// Read nad clear ACCDBL
-        (0x010 => tasks_rdclrdbl: ReadWrite<u32, Task::Register>),
+        (0x010 => tasks_rdclrdbl: WriteOnly<u32, Task::Register>),
         ///Reserve space so tasks_rdclrdbl has access to its entire address space (?)
-        (0x0012 => _reserved),
-        (0x0014 => word: ReadWrite<u32>),
+        (0x0014 => _reserved),
         /// All the events which have interrupts!
-        (0x100 => events_arr: ReadWrite<u32, Event::Register>),
+        (0x100 => events_arr: [ReadWrite<u32, Event::Register>; 5]),
         /// Event being generated for every new sample
         ///(0x100 => events_samplerdy: Write<u32, Event::Register>),
         /// Non-null report ready
@@ -40,40 +40,38 @@ register_structs! {
         ///(0x10C => events_dblrdy: Read<u32, Event::Register>),
         /// events stopped
         ///(0x110 => events_stopped: Read<u32, Event::Register>),
-        ///Reserve space so events_stopped has access to its entire address space (?)
-        (0x0102 => _reserved2),
-        (0x0104 => word: Read<u32>),
+        (0x0114 => _reserved2),
         /// Shortcut register
-        (0x200 => shorts: Read<u32, Shorts::Register>),
-        ///Reserve space so shorts has access to its entire address space (?)
+        (0x200 => shorts: ReadWrite<u32, Shorts::Register>),
         (0x204 => _reserved3),
-        (0x208 => word: ReadWrite<u32>),
         /// Enable interrupt
         (0x304 => intenset: ReadWrite<u32, Inte::Register>),
         /// Disable Interrupt
         (0x308 => intenclr: ReadWrite<u32, Inte::Register>),
+        (0x30C => _reserved4),
         /// Enable the quad decoder
-        (0x500 => enable: ReadWrite<u32, Ena::Register>),
-        /// <----- MISSING A REGISTER ----> ////
+        (0x500 => enable: ReadWrite<u32, Task::Register>),
+        /// Set the LED output pin polarity
+        (0x504 => ledpol: WriteOnly<u32, LedPol::Register>),
         /// Sampling-rate register
         (0x508 => sample_per: WriteOnly<u32, SampPer::Register>),
         /// Sample register (receives all samples)
         (0x50C => sample: WriteOnly<u32, Sample::Register>),
         /// Reportper
-        (0x510 => report_per: ReadOnly<u32, Report::Register>),
+        (0x510 => report_per: ReadOnly<u32, ReportPer::Register>),
         /// Accumulating motion-sample values register
         (0x514 => acc: ReadOnly<u32, Acc::Register>),
-        /// Reserve space for the rest of the registers ? 
-        (0x0102 => _reserved4),
-        (0x0104 => word: Read<u32>),
-        /// <------MISSING MORE REGISTERS ----> ////
+        (0x518 => acc_read: ReadOnly<u32, Acc::Register>),
+        (0x51C => reserved6),
+        (0x520 => psel_a: ReadWrite<u32, PinSelect::Register>),
+        (0x524 => psel_b: ReadWrite<u32, PinSelect::Register>),
+        (0x528 => reserved5),
         (0x550 => @END),
     }
 }
 
-
-//! In this section, I initialize all the bitfields associated with the type
-//! of register assigned to each member of the struct above. (is that right?)
+// In this section, I initialize all the bitfields associated with the type
+// of register assigned to each member of the struct above. (is that right?)
 register_bitfields![u32,
     Task [
         ENABLE 0
@@ -92,7 +90,15 @@ register_bitfields![u32,
         /// Write '1' to Enable shortcut on EVENTS_COMPARE\[5\] event
         DBLRDY_STOP 5,
         /// Write '1' to Enable shortcut on EVENTS_COMPARE\[6\] event
-        SAMPLERDY_READCLRACC 6,
+        SAMPLERDY_READCLRACC 6
+    ],
+    Event [
+        READY 0
+    ],
+    PinSelect [
+        Pin OFFSET(0) NUMBITS(5),
+        Port OFFSET(5) NUMBITS(1),
+        Connect OFFSET(31) NUMBITS(1)
     ],
     Inte [
         /// Write '1' to Enable interrupt on EVENTS_COMPARE\[0\] event
@@ -104,67 +110,64 @@ register_bitfields![u32,
         /// Write '1' to Enable interrupt on EVENTS_COMPARE\[3\] event
         DBLRDY 3,
         /// Write '1' to Enable interrupt on EVENTS_COMPARE\[4\] event
-        STOPPED 4,
-        /// Write '1' to Enable interrupt on EVENTS_COMPARE\[5\] event
-        ///COMPARE5 21
+        STOPPED 4
     ],
-    Ena [
-        /// idk...
-        ENABLE 1
+    LedPol [
+        LedPol OFFSET(0) NUMBITS(1) [
+            ActiveLow = 0,
+            ActiveHigh = 1
+        ]
     ],
     Sample [
         SAMPLE 1
     ],
     SampPer [
-        SAMPLEPER 1
+        SAMPLEPER OFFSET(0) NUMBITS(4) [
+            us128 = 0,
+            us256 = 1
+            // TODO: Fill out rest
+        ]
     ],
-    Report [
-        REPORTPER 1
+    ReportPer [
+        REPORTPER OFFSET(0) NUMBITS(4) [
+            hz10 = 0,
+            hz40 = 1
+            // TODO: fill out rest
+        ]
     ],
     Acc [
-        ACC 1
-    ],
+        ACC OFFSET(0) NUMBITS(32)
+    ]
 ];
 
-//! This defines the beginning of memory which is memory-mapped to the QDEC
-//! This base is declared under the Registers Table 3
-const QDEC_BASE: StaticRef<QdecRegisters> = unsafe { StaticRef::new(0x40012000 as *const QdecRegisters) };
+/// This defines the beginning of memory which is memory-mapped to the Qdec
+/// This base is declared under the Registers Table 3
+const QDEC_BASE: StaticRef<QdecRegisters> =
+    unsafe { StaticRef::new(0x40012000 as *const QdecRegisters) };
 
-/// The client referenced here is the capsule code which will be built on top of this
-pub trait CompareClient {
-    fn compare(&self);
+/// Qdec type declaration: gives the Qdec instance registers and a client
+pub struct Qdec {
+    registers: StaticRef<QdecRegisters>,
 }
 
-/// QDEC type declaration: gives the QDEC instance registers and a client 
-pub struct QDEC<'a> {
-    registers: StaticRef<QDECRegisters>,
-    client: OptionalCell<&'static dyn CompareClient>,
-}
-
-pub static mut QDEC: QDEC = QDEC {
-        registers: QDEC_BASE,
-        client: OptionalCell<&'static dyn CompareClient>,
+pub static mut QDEC: Qdec = Qdec {
+    registers: QDEC_BASE,
 };
 
-/// QDEC impl: provides the QDEC type with vital functionality including:
-/// FIRST DESIRED FUNCTIONALITY: new(arg1, arg2, ..., argN) -> define QDEC struct 
-/// TODO: Set up the mess that is functionality of QDEC
-impl QDEC<'a> {
-    pub const fn new(registers: StaticRef<QDECRegisters>, sample: usize) -> QDEC {
-        QDEC {
-            registers: QDEC_BASE,
-            client: OptionalCell::empty(),
-        }
-    }
-
+/// Qdec impl: provides the Qdec type with vital functionality including:
+/// FIRST DESIRED FUNCTIONALITY: new(arg1, arg2, ..., argN) -> define Qdec struct
+/// TODO: Set up the mess that is functionality of Qdec
+impl Qdec {
+    /*
     pub fn set_client(&self, client: &'static dyn CompareClient) {
         self.client.set(client);
     }
+    */
 
     /// When an interrupt occurs, check to see if any
     /// of the interrupt register bits are set. If it
     /// is, then put it in the client's bitmask
-     
+    /*
     pub fn handle_interrupt(&self) {
         self.client.map(|client| {
             let mut val = 0;
@@ -185,11 +188,13 @@ impl QDEC<'a> {
                     self.registers.intenclr.write(interrupt_bit);
                 }
             }
-            client.compare(val as u32);    
+            client.compare(val as u32);
         });
     }
+    */
 
     //add more functions here!
+    /*
     fn enable_interrupts(&self) { ///IS THIS THE RIGHT MACRO TO USE?
         let regs = &*self.registers;
         regs.intenset.write(Inte::____::SET /*TODO: Correct macro */);
@@ -200,23 +205,32 @@ impl QDEC<'a> {
         regs.intenclr.write(/*MACRO*/);
     }
 
-    fn interrupts_enable(&self) -> bool {
+    fn interrupts_enabled(&self) -> bool {
         let regs = &*self.registers;
         self.registers.intenset.is_set(/*MACRO*/);
     }
+    */
 
-    pub fn enable(&self) -> ReturnCode {
+    pub fn enable(&self) {
         let regs = &*self.registers;
-        self.registers.enable.write(/*MACRO*/);
+        regs.psel_a.write(PinSelect::Pin.val(30));
+        regs.psel_a.write(PinSelect::Port.val(0));
+        regs.psel_a.write(PinSelect::Connect.val(0));
+        regs.psel_b.write(PinSelect::Pin.val(31));
+        regs.psel_b.write(PinSelect::Port.val(0));
+        regs.psel_b.write(PinSelect::Connect.val(0));
+        regs.enable.write(Task::ENABLE::SET);
+        regs.tasks_start.write(Task::ENABLE::SET);
     }
 
-    fn is_enabled(&self) {
+    fn is_enabled(&self) -> bool {
         let regs = &*self.registers;
-        self.registers.enable.is_set(/*MACRO*/);
+        regs.enable.is_set(Task::ENABLE)
     }
 
-    pub fn get_ticks(&self) -> Result<u32, ReturnCode> {
+    pub fn get_acc(&self) -> u32 {
         let regs = &*self.registers;
-        self.registers.accumulate.read(/*MACRO*/);
-    }   
+        regs.tasks_readclracc.write(Task::ENABLE::SET);
+        regs.acc_read.read(Acc::ACC)
+    }
 }

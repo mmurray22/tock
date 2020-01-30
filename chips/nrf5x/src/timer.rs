@@ -304,7 +304,7 @@ impl TimerAlarm<'a> {
     }
 
     fn interrupts_enabled(&self) -> bool {
-        self.registers.intenset.is_set(ALARM_INTERRUPT_BIT);
+        self.registers.intenset.is_set(ALARM_INTERRUPT_BIT)
     }
 
     fn value(&self) -> u32 {
