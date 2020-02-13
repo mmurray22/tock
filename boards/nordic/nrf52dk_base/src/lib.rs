@@ -1,7 +1,7 @@
 //! Shared setup for nrf52dk boards.
 
 #![no_std]
-
+#![allow(dead_code)]
 #[allow(unused_imports)]
 use kernel::{create_capability, debug, debug_gpio, debug_verbose, static_init};
 
@@ -448,8 +448,8 @@ pub unsafe fn setup_board(
     //We think this is needed bc the MBEDOS driver does that
     gpio_port[qdec_pins.pin_a].make_input();
     gpio_port[qdec_pins.pin_b].make_input();
-    gpio_port[qdec_pins.pin_a].set_floating_state(FloatingState::PullNone);
-    gpio_port[qdec_pins.pin_b].set_floating_state(FloatingState::PullNone);
+    gpio_port[qdec_pins.pin_a].set_floating_state(FloatingState::PullUp);
+    gpio_port[qdec_pins.pin_b].set_floating_state(FloatingState::PullUp);
 
     // TODO: Use pinmux
     debug!("Initializing QDEC test!");

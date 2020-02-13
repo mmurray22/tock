@@ -2,11 +2,12 @@
 //!  set_client(), enable, get_ticks,
 //!  The nRF5x quadrature decoder
 //!
-
+#[allow(unused_imports)] 
 use kernel::common::cells::OptionalCell;
 use kernel::common::registers::{
     self, register_bitfields, register_structs, ReadOnly, ReadWrite, WriteOnly,
 };
+use kernel::{debug};
 use kernel::common::StaticRef;
 use kernel::hil;
 use kernel::hil::gpio::Pin;
@@ -15,7 +16,6 @@ use nrf5x::gpio::GPIOPin;
 
 // In this section I declare a struct called QdecRegisters, which contains all the
 // relevant registers as outlined in the Nordic 5x specification of the Qdec.
-// TODO: add in missing registers; TODO: add in register reserves
 register_structs! {
     pub QdecRegisters {
         /// Start Qdec sampling
@@ -228,16 +228,16 @@ impl Qdec {
     pub fn enable(&self) {
         let regs = &*self.registers;
         //TODO: Use `Pinmux` struct here instead of usize to prevent collisions
-        regs.psel_a.write(PinSelect::Pin.val(2));
-        regs.psel_a.write(PinSelect::Port.val(0));
-        regs.psel_a.write(PinSelect::Connect.val(0));
-        regs.psel_b.write(PinSelect::Pin.val(29));
-        regs.psel_b.write(PinSelect::Port.val(0));
-        regs.psel_b.write(PinSelect::Connect.val(0));
+        regs.psel_a.write(PinSelect::Pin.val(2) + PinSelect::Port.val(0) + 
+                          PinSelect::Connect.val(0));
+        regs.psel_b.write(PinSelect::Pin.val(29) + PinSelect::Port.val(0) + 
+                          PinSelect::Connect.val(0));
         regs.enable.write(Task::ENABLE::SET);
         regs.sample_per.write(SampPer::SAMPLEPER.val(5));
         regs.tasks_start.write(Task::ENABLE::SET);
+        debug!("Enabled!");
     }
+
 
     pub fn is_enabled(&self) -> bool {
         let regs = &*self.registers;
@@ -247,6 +247,9 @@ impl Qdec {
     pub fn get_acc(&self) -> u32 {
         let regs = &*self.registers;
         regs.tasks_readclracc.write(Task::ENABLE::SET);
+        /*TODO: Test code, not sure if this will work*/
+        //regs.tasks_readclraccdbl.write(Task::ENABLE::SET);
+        /*TODO: End of Test code*/
         let dummy = regs.acc_read.read(Acc::ACC);
         dummy
     }

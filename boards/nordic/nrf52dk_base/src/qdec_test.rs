@@ -1,3 +1,5 @@
+#[allow(unused_imports)] 
+
 use capsules::virtual_alarm::{MuxAlarm, VirtualMuxAlarm};
 use kernel::hil::time;
 use kernel::hil::time::{Alarm, Frequency};
