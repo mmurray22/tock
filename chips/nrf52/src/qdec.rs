@@ -9,6 +9,7 @@ use kernel::common::registers::{
 };
 use kernel::common::StaticRef;
 use kernel::hil;
+use kernel::hil::gpio::Pin;
 use kernel::ReturnCode;
 
 // In this section I declare a struct called QdecRegisters, which contains all the
@@ -210,9 +211,9 @@ impl Qdec {
         self.registers.intenset.is_set(/*MACRO*/);
     }
     */
-
     pub fn enable(&self) {
         let regs = &*self.registers;
+        //TODO: Use `Pinmux` struct here instead of usize to prevent collisions
         regs.psel_a.write(PinSelect::Pin.val(30));
         regs.psel_a.write(PinSelect::Port.val(0));
         regs.psel_a.write(PinSelect::Connect.val(0));

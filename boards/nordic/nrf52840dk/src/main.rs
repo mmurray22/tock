@@ -68,7 +68,7 @@
 use kernel::{debug, debug_gpio, debug_verbose, static_init};
 use nrf52840::gpio::Pin;
 
-use nrf52dk_base::{SpiMX25R6435FPins, SpiPins, UartPins};
+use nrf52dk_base::{QdecPins, SpiMX25R6435FPins, SpiPins, UartPins};
 
 // The nRF52840DK LEDs (see back of board)
 const LED1_PIN: Pin = Pin::P0_13;
@@ -96,6 +96,9 @@ const SPI_MX25R6435F_CHIP_SELECT: Pin = Pin::P0_17;
 const SPI_MX25R6435F_WRITE_PROTECT_PIN: Pin = Pin::P0_22;
 const SPI_MX25R6435F_HOLD_PIN: Pin = Pin::P0_23;
 
+const QDEC_PIN_A: Pin = Pin::P0_02;
+const QDEC_PIN_B: Pin = Pin::P0_29;
+
 /// UART Writer
 pub mod io;
 
@@ -111,8 +114,6 @@ static mut APP_MEMORY: [u8; 245760] = [0; 245760];
 
 static mut PROCESSES: [Option<&'static dyn kernel::procs::ProcessType>; NUM_PROCS] =
     [None, None, None, None, None, None, None, None];
-
-
 
 /// Dummy buffer that causes the linker to reserve enough space for the stack.
 #[no_mangle]
@@ -292,7 +293,7 @@ pub unsafe fn reset_handler() {
     }
 
     let board_kernel = static_init!(kernel::Kernel, kernel::Kernel::new(&PROCESSES));
-    
+
     nrf52dk_base::setup_board(
         board_kernel,
         BUTTON_RST_PIN,
@@ -316,5 +317,6 @@ pub unsafe fn reset_handler() {
         FAULT_RESPONSE,
         nrf52840::uicr::Regulator0Output::DEFAULT,
         false,
+        &QdecPins::new(QDEC_PIN_A, QDEC_PIN_B),
     );
 }
