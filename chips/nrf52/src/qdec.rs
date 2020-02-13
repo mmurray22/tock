@@ -9,6 +9,7 @@ use kernel::common::registers::{
 };
 use kernel::common::StaticRef;
 use kernel::hil;
+use kernel::hil::gpio::Pin;
 use kernel::ReturnCode;
 use nrf5x::gpio::GPIOPin;
 const QDEC_A: GPIOPin = Pin::P0_29;
@@ -228,12 +229,13 @@ impl Qdec {
         self.registers.intenset.is_set(/*MACRO*/);
     }
     */
-
     pub fn enable(&self) {
         QDEC_A.set_floating_state(kernel::hil::gpio::FloatingState::PullNone);
         //QDEC_B.set_floating_state(kernel::hil::gpio::FloatingState::PullNone);
         let regs = &*self.registers;
         regs.psel_a.write(PinSelect::Pin.val(2));
+        //TODO: Use `Pinmux` struct here instead of usize to prevent collisions
+        regs.psel_a.write(PinSelect::Pin.val(30));
         regs.psel_a.write(PinSelect::Port.val(0));
         regs.psel_a.write(PinSelect::Connect.val(0));
         regs.psel_b.write(PinSelect::Pin.val(29));

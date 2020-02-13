@@ -11,6 +11,7 @@ use capsules::virtual_uart::MuxUart;
 use kernel::capabilities;
 use kernel::component::Component;
 use kernel::hil;
+use kernel::hil::gpio::{Configure, FloatingState};
 use nrf52::gpio::Pin;
 use nrf52::rtc::Rtc;
 use nrf52::uicr::Regulator0Output;
@@ -71,6 +72,19 @@ pub struct UartPins {
 impl UartPins {
     pub fn new(rts: Pin, txd: Pin, cts: Pin, rxd: Pin) -> Self {
         Self { rts, txd, cts, rxd }
+    }
+}
+
+/// Pins for the UART
+#[derive(Debug)]
+pub struct QdecPins {
+    pin_a: Pin,
+    pin_b: Pin,
+}
+
+impl QdecPins {
+    pub fn new(pin_a: Pin, pin_b: Pin) -> Self {
+        Self { pin_a, pin_b }
     }
 }
 
@@ -152,6 +166,7 @@ pub unsafe fn setup_board(
     app_fault_response: kernel::procs::FaultResponse,
     reg_vout: Regulator0Output,
     nfc_as_gpios: bool,
+    qdec_pins: &QdecPins,
 ) {
     // Make non-volatile memory writable and activate the reset button
     let uicr = nrf52::uicr::Uicr::new();
@@ -429,6 +444,14 @@ pub unsafe fn setup_board(
         DynamicDeferredCall::new(dynamic_deferred_call_clients)
     );
     DynamicDeferredCall::set_global_instance(dynamic_deferred_call);
+
+    //We think this is needed bc the MBEDOS driver does that
+    gpio_port[qdec_pins.pin_a].make_input();
+    gpio_port[qdec_pins.pin_b].make_input();
+    gpio_port[qdec_pins.pin_a].set_floating_state(FloatingState::PullNone);
+    gpio_port[qdec_pins.pin_b].set_floating_state(FloatingState::PullNone);
+
+    // TODO: Use pinmux
     let qdec_test = qdec_test::initialize_all(mux_alarm);
     debug!("Testing: Qdec Initialized!");
     let platform = Platform {
