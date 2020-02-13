@@ -10,6 +10,9 @@ use kernel::common::registers::{
 use kernel::common::StaticRef;
 use kernel::hil;
 use kernel::ReturnCode;
+use nrf5x::gpio::GPIOPin;
+const QDEC_A: GPIOPin = Pin::P0_29;
+const QDEC_B: GPIOPin = Pin::P0_02;
 
 // In this section I declare a struct called QdecRegisters, which contains all the
 // relevant registers as outlined in the Nordic 5x specification of the Qdec.
@@ -124,14 +127,30 @@ register_bitfields![u32,
     SampPer [
         SAMPLEPER OFFSET(0) NUMBITS(4) [
             us128 = 0,
-            us256 = 1
+            us256 = 1,
+            us512 = 2,
+            us1024 = 3,
+            us2048 = 4,
+            us4096 = 5,
+            us8192 = 6,
+            us16384 = 7,
+            ms32 = 8,
+            ms65 = 9,
+            ms131 = 10
             // TODO: Fill out rest
         ]
     ],
     ReportPer [
         REPORTPER OFFSET(0) NUMBITS(4) [
             hz10 = 0,
-            hz40 = 1
+            hz40 = 1,
+            hz80 = 2,
+            hz120 = 3,
+            hz160 = 4,
+            hz200 = 5,
+            hz240 = 6,
+            hz280 = 7,
+            hz1 = 8
             // TODO: fill out rest
         ]
     ],
@@ -156,7 +175,6 @@ pub static mut QDEC: Qdec = Qdec {
 
 /// Qdec impl: provides the Qdec type with vital functionality including:
 /// FIRST DESIRED FUNCTIONALITY: new(arg1, arg2, ..., argN) -> define Qdec struct
-/// TODO: Set up the mess that is functionality of Qdec
 impl Qdec {
     /*
     pub fn set_client(&self, client: &'static dyn CompareClient) {
@@ -212,14 +230,17 @@ impl Qdec {
     */
 
     pub fn enable(&self) {
+        QDEC_A.set_floating_state(kernel::hil::gpio::FloatingState::PullNone);
+        //QDEC_B.set_floating_state(kernel::hil::gpio::FloatingState::PullNone);
         let regs = &*self.registers;
-        regs.psel_a.write(PinSelect::Pin.val(30));
+        regs.psel_a.write(PinSelect::Pin.val(2));
         regs.psel_a.write(PinSelect::Port.val(0));
         regs.psel_a.write(PinSelect::Connect.val(0));
-        regs.psel_b.write(PinSelect::Pin.val(31));
+        regs.psel_b.write(PinSelect::Pin.val(29));
         regs.psel_b.write(PinSelect::Port.val(0));
         regs.psel_b.write(PinSelect::Connect.val(0));
         regs.enable.write(Task::ENABLE::SET);
+        regs.sample_per.write(SampPer::SAMPLEPER.val(5));
         regs.tasks_start.write(Task::ENABLE::SET);
     }
 

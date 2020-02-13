@@ -430,7 +430,7 @@ pub unsafe fn setup_board(
     );
     DynamicDeferredCall::set_global_instance(dynamic_deferred_call);
     let qdec_test = qdec_test::initialize_all(mux_alarm);
-
+    debug!("Testing: Qdec Initialized!");
     let platform = Platform {
         button: button,
         ble_radio: ble_radio,

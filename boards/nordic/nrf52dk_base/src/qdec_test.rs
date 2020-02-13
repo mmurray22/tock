@@ -17,6 +17,7 @@ pub unsafe fn initialize_all(
     'static,
     capsules::virtual_alarm::VirtualMuxAlarm<'static, nrf52::rtc::Rtc<'static>>,
 > {
+    debug!("Hello");
     let qdec_alarm = static_init!(
         VirtualMuxAlarm<'static, nrf52::rtc::Rtc>,
         VirtualMuxAlarm::new(mux_alarm)
