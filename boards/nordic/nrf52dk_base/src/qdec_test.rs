@@ -17,7 +17,6 @@ pub unsafe fn initialize_all(
     'static,
     capsules::virtual_alarm::VirtualMuxAlarm<'static, nrf52::rtc::Rtc<'static>>,
 > {
-    debug!("Hello");
     let qdec_alarm = static_init!(
         VirtualMuxAlarm<'static, nrf52::rtc::Rtc>,
         VirtualMuxAlarm::new(mux_alarm)
@@ -35,6 +34,7 @@ pub unsafe fn initialize_all(
 
 impl<'a, A: time::Alarm<'a>> QdecTest<'a, A> {
     pub fn start(&self) {
+        self.qdec.enable();
         self.schedule_next();
     }
 
@@ -48,6 +48,7 @@ impl<'a, A: time::Alarm<'a>> QdecTest<'a, A> {
 impl<'a, A: time::Alarm<'a>> time::AlarmClient for QdecTest<'a, A> {
     fn fired(&self) {
         let acc = self.qdec.get_acc();
+        debug!("Is enabled: {:?}", self.qdec.is_enabled());
         debug!("Acc: {:?}", acc);
         self.schedule_next();
     }

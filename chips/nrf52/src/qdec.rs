@@ -12,8 +12,6 @@ use kernel::hil;
 use kernel::hil::gpio::Pin;
 use kernel::ReturnCode;
 use nrf5x::gpio::GPIOPin;
-const QDEC_A: GPIOPin = Pin::P0_29;
-const QDEC_B: GPIOPin = Pin::P0_02;
 
 // In this section I declare a struct called QdecRegisters, which contains all the
 // relevant registers as outlined in the Nordic 5x specification of the Qdec.
@@ -138,7 +136,6 @@ register_bitfields![u32,
             ms32 = 8,
             ms65 = 9,
             ms131 = 10
-            // TODO: Fill out rest
         ]
     ],
     ReportPer [
@@ -152,7 +149,6 @@ register_bitfields![u32,
             hz240 = 6,
             hz280 = 7,
             hz1 = 8
-            // TODO: fill out rest
         ]
     ],
     Acc [
@@ -230,12 +226,9 @@ impl Qdec {
     }
     */
     pub fn enable(&self) {
-        QDEC_A.set_floating_state(kernel::hil::gpio::FloatingState::PullNone);
-        //QDEC_B.set_floating_state(kernel::hil::gpio::FloatingState::PullNone);
         let regs = &*self.registers;
-        regs.psel_a.write(PinSelect::Pin.val(2));
         //TODO: Use `Pinmux` struct here instead of usize to prevent collisions
-        regs.psel_a.write(PinSelect::Pin.val(30));
+        regs.psel_a.write(PinSelect::Pin.val(2));
         regs.psel_a.write(PinSelect::Port.val(0));
         regs.psel_a.write(PinSelect::Connect.val(0));
         regs.psel_b.write(PinSelect::Pin.val(29));
@@ -246,7 +239,7 @@ impl Qdec {
         regs.tasks_start.write(Task::ENABLE::SET);
     }
 
-    fn is_enabled(&self) -> bool {
+    pub fn is_enabled(&self) -> bool {
         let regs = &*self.registers;
         regs.enable.is_set(Task::ENABLE)
     }
@@ -254,6 +247,7 @@ impl Qdec {
     pub fn get_acc(&self) -> u32 {
         let regs = &*self.registers;
         regs.tasks_readclracc.write(Task::ENABLE::SET);
-        regs.acc_read.read(Acc::ACC)
+        let dummy = regs.acc_read.read(Acc::ACC);
+        dummy
     }
 }

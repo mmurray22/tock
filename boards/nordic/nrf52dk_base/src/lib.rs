@@ -452,6 +452,7 @@ pub unsafe fn setup_board(
     gpio_port[qdec_pins.pin_b].set_floating_state(FloatingState::PullNone);
 
     // TODO: Use pinmux
+    debug!("Initializing QDEC test!");
     let qdec_test = qdec_test::initialize_all(mux_alarm);
     debug!("Testing: Qdec Initialized!");
     let platform = Platform {
