@@ -5,12 +5,13 @@ use kernel::hil::time;
 use kernel::hil::time::{Alarm, Frequency};
 use kernel::{debug, static_init};
 use nrf52::qdec::Qdec;
+//use nrf5x::pinmux;
 
 pub const TEST_DELAY_MS: u32 = 1000;
 
 pub struct QdecTest<'a, A: time::Alarm<'a>> {
     alarm: &'a A,
-    qdec: &'a Qdec,
+    pub qdec: &'a mut Qdec,
 }
 
 pub unsafe fn initialize_all(
@@ -27,7 +28,7 @@ pub unsafe fn initialize_all(
         QdecTest<capsules::virtual_alarm::VirtualMuxAlarm<'static, nrf52::rtc::Rtc<'static>>>,
         QdecTest {
             alarm: qdec_alarm,
-            qdec: &nrf52::qdec::QDEC,
+            qdec: &mut nrf52::qdec::QDEC,
         }
     );
     qdec_alarm.set_client(qdec_test);
@@ -35,7 +36,8 @@ pub unsafe fn initialize_all(
 }
 
 impl<'a, A: time::Alarm<'a>> QdecTest<'a, A> {
-    pub fn start(&self) {
+    pub fn start(&self) 
+    {
         self.qdec.enable();
         self.schedule_next();
     }

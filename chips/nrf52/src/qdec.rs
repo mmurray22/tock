@@ -3,6 +3,8 @@
 //!  The nRF5x quadrature decoder
 //!
 #[allow(unused_imports)] 
+use core;
+use core::cell::Cell;
 use kernel::common::cells::OptionalCell;
 use kernel::common::registers::{
     self, register_bitfields, register_structs, ReadOnly, ReadWrite, WriteOnly,
@@ -13,7 +15,7 @@ use kernel::hil;
 use kernel::hil::gpio::Pin;
 use kernel::ReturnCode;
 use nrf5x::gpio::GPIOPin;
-
+use nrf5x::pinmux;
 // In this section I declare a struct called QdecRegisters, which contains all the
 // relevant registers as outlined in the Nordic 5x specification of the Qdec.
 register_structs! {
@@ -164,15 +166,25 @@ const QDEC_BASE: StaticRef<QdecRegisters> =
 /// Qdec type declaration: gives the Qdec instance registers and a client
 pub struct Qdec {
     registers: StaticRef<QdecRegisters>,
+    args_pin_a: OptionalCell<pinmux::Pinmux>,
+    args_pin_b: OptionalCell<pinmux::Pinmux>,
 }
 
 pub static mut QDEC: Qdec = Qdec {
     registers: QDEC_BASE,
+    args_pin_a: OptionalCell::empty(),
+    args_pin_b: OptionalCell::empty(),
 };
 
 /// Qdec impl: provides the Qdec type with vital functionality including:
 /// FIRST DESIRED FUNCTIONALITY: new(arg1, arg2, ..., argN) -> define Qdec struct
 impl Qdec {
+
+    pub fn set_pins(&self, pin_a: pinmux::Pinmux, pin_b: pinmux::Pinmux)
+    {
+        self.args_pin_a.set(pin_a);
+        self.args_pin_b.set(pin_b);
+    } 
     /*
     pub fn set_client(&self, client: &'static dyn CompareClient) {
         self.client.set(client);
@@ -227,11 +239,26 @@ impl Qdec {
     */
     pub fn enable(&self) {
         let regs = &*self.registers;
+        (self.args_pin_a).map_or_else(
+            || {
+                // Rather than setting this here, set it in the initialization of the struct
+                // (might require adding a new() function)
+                // And if this map_or() fails, return an error code.
+                regs.psel_a.write(PinSelect::Connect.val(1));
+            },
+            |pin_a| {
+                regs.psel_a.write(PinSelect::Pin.val(pin_a.into()) + PinSelect::Port.val(0)                                  + PinSelect::Connect.val(0));
+            }
+            );
+         (self.args_pin_b).map_or_else(
+             || {
+                regs.psel_a.write(PinSelect::Connect.val(1));
+             },
+             |pin_b| {
+                regs.psel_b.write(PinSelect::Pin.val(pin_b.into()) + PinSelect::Port.val(0)                                   + PinSelect::Connect.val(0));
+             }
+             );
         //TODO: Use `Pinmux` struct here instead of usize to prevent collisions
-        regs.psel_a.write(PinSelect::Pin.val(2) + PinSelect::Port.val(0) + 
-                          PinSelect::Connect.val(0));
-        regs.psel_b.write(PinSelect::Pin.val(29) + PinSelect::Port.val(0) + 
-                          PinSelect::Connect.val(0));
         regs.enable.write(Task::ENABLE::SET);
         regs.sample_per.write(SampPer::SAMPLEPER.val(5));
         regs.tasks_start.write(Task::ENABLE::SET);
@@ -247,8 +274,6 @@ impl Qdec {
     pub fn get_acc(&self) -> u32 {
         let regs = &*self.registers;
         regs.tasks_readclracc.write(Task::ENABLE::SET);
-        /*TODO: Test code, not sure if this will work*/
-        //regs.tasks_readclraccdbl.write(Task::ENABLE::SET);
         /*TODO: End of Test code*/
         let dummy = regs.acc_read.read(Acc::ACC);
         dummy

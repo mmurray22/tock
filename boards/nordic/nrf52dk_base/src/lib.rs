@@ -453,7 +453,7 @@ pub unsafe fn setup_board(
 
     // TODO: Use pinmux
     debug!("Initializing QDEC test!");
-    let qdec_test = qdec_test::initialize_all(mux_alarm);
+    let qdec_test = qdec_test::initialize_all(mux_alarm); 
     debug!("Testing: Qdec Initialized!");
     let platform = Platform {
         button: button,
@@ -473,7 +473,8 @@ pub unsafe fn setup_board(
 
     debug!("Initialization complete. Entering main loop\r");
     debug!("{}", &nrf52::ficr::FICR_INSTANCE);
-
+    qdec_test.qdec.set_pins (nrf52::pinmux::Pinmux::new(qdec_pins.pin_a as u32),
+                            nrf52::pinmux::Pinmux::new(qdec_pins.pin_b as u32));
     qdec_test.start();
     debug!("Started QDEC");
 
