@@ -1,5 +1,4 @@
-#[allow(unused_imports)] 
-
+#[allow(unused_imports)]
 use capsules::virtual_alarm::{MuxAlarm, VirtualMuxAlarm};
 use kernel::hil::time;
 use kernel::hil::time::{Alarm, Frequency};
@@ -16,6 +15,7 @@ pub struct QdecTest<'a, A: time::Alarm<'a>> {
 
 pub unsafe fn initialize_all(
     mux_alarm: &'static MuxAlarm<'static, nrf52::rtc::Rtc<'static>>,
+    qdec: &'static mut Qdec,
 ) -> &'static QdecTest<
     'static,
     capsules::virtual_alarm::VirtualMuxAlarm<'static, nrf52::rtc::Rtc<'static>>,
@@ -28,7 +28,7 @@ pub unsafe fn initialize_all(
         QdecTest<capsules::virtual_alarm::VirtualMuxAlarm<'static, nrf52::rtc::Rtc<'static>>>,
         QdecTest {
             alarm: qdec_alarm,
-            qdec: &mut nrf52::qdec::QDEC,
+            qdec: qdec,
         }
     );
     qdec_alarm.set_client(qdec_test);
@@ -36,8 +36,7 @@ pub unsafe fn initialize_all(
 }
 
 impl<'a, A: time::Alarm<'a>> QdecTest<'a, A> {
-    pub fn start(&self) 
-    {
+    pub fn start(&self) {
         self.qdec.enable();
         self.schedule_next();
     }

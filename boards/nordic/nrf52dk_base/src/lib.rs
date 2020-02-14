@@ -13,6 +13,7 @@ use kernel::component::Component;
 use kernel::hil;
 use kernel::hil::gpio::{Configure, FloatingState};
 use nrf52::gpio::Pin;
+use nrf52::qdec::Qdec;
 use nrf52::rtc::Rtc;
 use nrf52::uicr::Regulator0Output;
 
@@ -453,7 +454,14 @@ pub unsafe fn setup_board(
 
     // TODO: Use pinmux
     debug!("Initializing QDEC test!");
-    let qdec_test = qdec_test::initialize_all(mux_alarm); 
+    let qdec = static_init!(
+        Qdec,
+        Qdec::new(
+            nrf52::pinmux::Pinmux::new(qdec_pins.pin_a as u32),
+            nrf52::pinmux::Pinmux::new(qdec_pins.pin_b as u32),
+        )
+    );
+    let qdec_test = qdec_test::initialize_all(mux_alarm, qdec);
     debug!("Testing: Qdec Initialized!");
     let platform = Platform {
         button: button,
@@ -473,8 +481,6 @@ pub unsafe fn setup_board(
 
     debug!("Initialization complete. Entering main loop\r");
     debug!("{}", &nrf52::ficr::FICR_INSTANCE);
-    qdec_test.qdec.set_pins (nrf52::pinmux::Pinmux::new(qdec_pins.pin_a as u32),
-                            nrf52::pinmux::Pinmux::new(qdec_pins.pin_b as u32));
     qdec_test.start();
     debug!("Started QDEC");
 
