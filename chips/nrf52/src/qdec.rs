@@ -7,6 +7,7 @@ use core;
 use kernel::common::registers::{
     register_bitfields, register_structs, ReadOnly, ReadWrite, WriteOnly,
 };
+use kernel::ReturnCode;
 use kernel::common::StaticRef;
 use kernel::debug;
 use kernel::hil;
@@ -243,16 +244,19 @@ impl Qdec {
         debug!("Enabled!");
     }
 
-    pub fn is_enabled(&self) -> bool {
+    pub fn is_enabled(&self) -> ReturnCode {
         let regs = &*self.registers;
-        regs.enable.is_set(Task::ENABLE)
+        let result = if regs.enable.is_set(Task::ENABLE) {
+            ReturnCode::SUCCESS
+        } else {
+            ReturnCode::FAIL
+        };
+        result
     }
 
     pub fn get_acc(&self) -> u32 {
         let regs = &*self.registers;
         regs.tasks_readclracc.write(Task::ENABLE::SET);
-        /*TODO: End of Test code*/
-        let dummy = regs.acc_read.read(Acc::ACC);
-        dummy
+        regs.acc_read.read(Acc::ACC)
     }
 }

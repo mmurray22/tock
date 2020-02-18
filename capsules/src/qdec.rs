@@ -1,30 +1,54 @@
-//! There will be lots of comments here eventually...
-//!
-//!
-//!
-//! KK will add all those later
-//!
+//! Capsule for QDEC 
 
-use core::cell::Cell;
-use kernel::hil::gpio;
 use crate::driver;
+use core::cell::Cell;
+use kernel::hil; 
+use kernel::{AppId, ReturnCode, Driver, Grant};
 
+pub const DRIVER_NUM: usize = driver::NUM::QDEC as usize;
 
-#[derive(Clone, Copy)]
-pub enum Position {
-    PositionUp,
-    PositionDown,
+pub struct Qdec<'a> {
+    driver: &'a dyn hil::qdec::Qdec<'a>,
+    apps: Grant<App>,
 }
 
-///I want to create some public struct for the QDEC
-pub struct QDEC<'a> {
-    ///what do I want to put in here?
+pub struct App {
+    threshold: usize,
 }
 
-impl<'a> QDEC<'a> {
-
+impl Default for App {
+    fn default() -> App {
+        App {
+            threshold: 0,
+        }
+    }
 }
 
-impl<'a> Driver for QDEC<'a> { //! this is for the hil
+impl Qdec<'a> {
+    pub fn new (driver: &'a dyn hil::qdec::Qdec<'a>, grant: Grant<App>) -> Qdec<'a> {
+        Qdec {
+            driver: driver,
+            apps: grant,
+        }
+    }
+    
+    fn enable_qdec (&self) -> ReturnCode {
+        self.driver.enable();
+        self.driver.is_enabled()
+    }
+    
+    fn get_rotation_changes (&self) -> u32 {
+        self.driver.get_acc()
+    }
 }
 
+impl Driver for Qdec<'a> {
+    fn command (&self, command_num: usize, data: usize, data2: usize, appid: AppId) -> ReturnCode {
+        match command_num {
+            0 => ReturnCode::SUCCESS,
+            1 => self.enable_qdec (),
+            //2 => self.get_rotation_changes (&self)
+            _ => ReturnCode::ENOSUPPORT
+        }
+    }
+}

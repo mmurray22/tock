@@ -8,6 +8,7 @@ use kernel::{create_capability, debug, debug_gpio, debug_verbose, static_init};
 use capsules::virtual_alarm::VirtualMuxAlarm;
 use capsules::virtual_spi::MuxSpiMaster;
 use capsules::virtual_uart::MuxUart;
+use capsules;
 use kernel::capabilities;
 use kernel::component::Component;
 use kernel::hil;
@@ -111,6 +112,8 @@ pub struct Platform {
     // The nRF52dk does not have the flash chip on it, so we make this optional.
     nonvolatile_storage:
         Option<&'static capsules::nonvolatile_storage_driver::NonvolatileStorage<'static>>,
+    qdec: &'static capsules::qdec::Qdec<'static>,
+    //_ => f(None),
 }
 
 impl kernel::Platform for Platform {
@@ -125,6 +128,7 @@ impl kernel::Platform for Platform {
             capsules::led::DRIVER_NUM => f(Some(self.led)),
             capsules::button::DRIVER_NUM => f(Some(self.button)),
             capsules::rng::DRIVER_NUM => f(Some(self.rng)),
+            capsules::qdec::DRIVER_NUM => f(Some(self.qdec)),
             capsules::ble_advertising_driver::DRIVER_NUM => f(Some(self.ble_radio)),
             capsules::ieee802154::DRIVER_NUM => match self.ieee802154_radio {
                 Some(radio) => f(Some(radio)),
@@ -474,6 +478,7 @@ pub unsafe fn setup_board(
         temp: temp,
         alarm: alarm,
         nonvolatile_storage: nonvolatile_storage,
+        qdec: capsules::qdec,
         ipc: kernel::ipc::IPC::new(board_kernel, &memory_allocation_capability),
     };
 

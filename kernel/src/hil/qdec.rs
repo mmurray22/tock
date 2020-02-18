@@ -1,23 +1,17 @@
-//! This is a new hardware interface for the QDEC!
-//! Generic QDEC for any board
-use crate::hil::gpio;
+/// A basic interface for a QDEC compatible chip
+///
+/// This trait provides a stanfard interface for chips that 
+/// contain a quadrature encoder. Any interface functions that
+/// a chip cannot implement can be ignored by the chip capsule 
+/// and an error will automatically be returned.
 
-pub trait QDEC {
-  //!
-  fn set_client();
-  fn enable();
-  fn get_ticks(&self) -> Result<u32, ReturnCode>; 
-  fn enable(&self) -> ReturnCode; //! success or error
- //! ACC register, enable debounce?, prob 0 for sample rate
-  fn rotation(&mut self);
-  //!USE BUTTON HIL FOR THIS
-  //!fn pressed_button(&mut self);
-  //!fn released_button(&mut self);
-  fn initialize_pins (&mut self);
+use crate::returncode::ReturnCode;
+//use nrf5x::pinmux;
+
+pub trait Qdec<'a> {
+  fn enable(&self);
+
+  fn is_enabled (&self) -> ReturnCode;
+    
+  fn get_acc (&self) -> u32;
 }
-
-//! In kernel test in the boards folder
-//! create a new qdec, config, and then call fxns avail
-//! Need to set a timer 
-//! Samples imix -> src -> udp_lowpan_test
-//! Where to proceed from here?
