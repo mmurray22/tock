@@ -4,6 +4,7 @@
 //!
 #[allow(unused_imports)]
 use core;
+use kernel::common::cells::OptionalCell;
 use kernel::common::registers::{
     register_bitfields, register_structs, ReadOnly, ReadWrite, WriteOnly,
 };
@@ -161,6 +162,7 @@ const QDEC_BASE: StaticRef<QdecRegisters> =
 /// Qdec type declaration: gives the Qdec instance registers and a client
 pub struct Qdec {
     registers: StaticRef<QdecRegisters>,
+    client: OptionalCell<&'static dyn kernel::hil::qdec::QdecClient>,
 }
 
 /// Qdec impl: provides the Qdec type with vital functionality including:
@@ -169,6 +171,7 @@ impl Qdec {
     pub unsafe fn new(pin_a: pinmux::Pinmux, pin_b: pinmux::Pinmux) -> Qdec {
         let qdec = Qdec {
             registers: QDEC_BASE,
+            client: OptionalCell::empty(),
         };
         let regs = qdec.registers;
         regs.psel_a.write(
@@ -179,18 +182,20 @@ impl Qdec {
         );
         qdec
     }
-}
+
     
-    /*pub fn set_client(&self, client: &'static dyn CompareClient) {
+    pub fn set_client(&self, client: &'static dyn kernel::hil::qdec::QdecClient) {
         self.client.set(client);
-    }*/
+    }
     
 
     /// When an interrupt occurs, check to see if any
     /// of the interrupt register bits are set. If it
     /// is, then put it in the client's bitmask
-    /*
+    /// TODO: DO I NEED TO DISABLE INTERRUPTS
+    /// TODO: ADD CLIENT CODE TO HIL/CAPSULE/LIB
     pub fn handle_interrupt(&self) {
+        self.disable_interrupts();
         self.client.map(|client| {
             let mut val = 0;
             // For each of 4 possible compare events, if it's happened,
@@ -206,6 +211,7 @@ impl Qdec {
                         2 => Inte::ACCOF::SET,
                         3 => Inte::DBLRDY::SET,
                         4 => Inte::STOPPED::SET,
+                        _ => Inte::STOPPED::SET,
                     };
                     self.registers.intenclr.write(interrupt_bit);
                 }
@@ -213,51 +219,18 @@ impl Qdec {
             client.compare(val as u32);
         });
     }
-    */
 
-    //add more functions here!
-    /*
-    fn enable_interrupts(&self) { ///IS THIS THE RIGHT MACRO TO USE?
+    // NOTE: ALL INTERRUPTS ARE ONLY FOR SAMPLING RIGHT NOW 
+    fn enable_interrupts(&self) { //IS THIS THE RIGHT MACRO TO USE?
         let regs = &*self.registers;
-        regs.intenset.write(Inte::____::SET /*TODO: Correct macro */);
+        regs.intenset.write(Inte::SAMPLERDY::SET);
     }
 
     fn disable_interrupts(&self) {
         let regs = &*self.registers;
-        regs.intenclr.write(/*MACRO*/);
+        regs.intenclr.write(Inte::SAMPLERDY::SET);
     }
-
-    fn interrupts_enabled(&self) -> bool {
-        let regs = &*self.registers;
-        self.registers.intenset.is_set(/*MACRO*/);
-    }
-    */
-    /*pub fn enable(&self) {
-        let regs = &*self.registers;
-        regs.enable.write(Task::ENABLE::SET);
-        regs.sample_per.write(SampPer::SAMPLEPER.val(5));
-        regs.tasks_start.write(Task::ENABLE::SET);
-        debug!("Enabled!");
-    }
-
-    pub fn is_enabled(&self) -> ReturnCode {
-        let regs = &*self.registers;
-        let result = if regs.enable.is_set(Task::ENABLE) {
-            ReturnCode::SUCCESS
-        } else {
-            ReturnCode::FAIL
-        };
-        result
-    }
-
-    pub fn get_acc(&self) -> u32 {
-        let regs = &*self.registers;
-        regs.tasks_readclracc.write(Task::ENABLE::SET);
-        regs.acc_read.read(Acc::ACC)
-    }*/
-
-//TODO: FIX SPACING!
-impl kernel::hil::qdec::QdecDriver for Qdec {
+    
     fn enable(&self) {
         let regs = &*self.registers;
         regs.enable.write(Task::ENABLE::SET);
@@ -276,9 +249,26 @@ impl kernel::hil::qdec::QdecDriver for Qdec {
         result
     }
 
+    /*fn interrupts_enabled(&self) -> bool {
+        let regs = &*self.registers;
+        self.registers.intenset.is_set(Inte::SAMPLERDY)
+    }i*/
+}    
+//TODO: FIX SPACING!
+impl kernel::hil::qdec::QdecDriver for Qdec { 
+    fn enable_qdec (&self) -> ReturnCode {
+        self.enable();
+        self.is_enabled()
+    }
+
     fn get_acc(&self) -> u32 {
         let regs = &*self.registers;
+        self.enable_interrupts();
         regs.tasks_readclracc.write(Task::ENABLE::SET);
         regs.acc_read.read(Acc::ACC)
+    }
+    
+    fn set_client(&self, client: &'static dyn kernel::hil::qdec::QdecClient) {
+        self.client.set(client);
     }
 }

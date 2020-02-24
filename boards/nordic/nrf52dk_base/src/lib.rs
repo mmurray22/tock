@@ -7,7 +7,6 @@ use kernel::{create_capability, debug, debug_gpio, debug_verbose, static_init};
 use capsules::virtual_alarm::VirtualMuxAlarm;
 use capsules::virtual_spi::MuxSpiMaster;
 use capsules::virtual_uart::MuxUart;
-use capsules::qdec::QdecInterface;
 use kernel::capabilities;
 use kernel::component::Component;
 use kernel::hil;
@@ -467,6 +466,7 @@ pub unsafe fn setup_board(
             board_kernel.create_grant(&memory_allocation_capability)
         )
     );
+    kernel::hil::qdec::QdecDriver::set_client(qdec_pin_initialize, qdec);
     debug!("Testing: Qdec Initialized!");
     //END: QDEC INITIALIZATION
 
