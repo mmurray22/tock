@@ -6,9 +6,9 @@
 /// and an error will automatically be returned.
 
 use crate::returncode::ReturnCode;
-//use nrf5x::pinmux;
 
-pub trait Qdec<'a> {
+pub trait QdecDriver {
+  
   fn enable(&self);
 
   fn is_enabled (&self) -> ReturnCode;

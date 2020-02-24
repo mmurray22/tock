@@ -1,14 +1,13 @@
 //! Capsule for QDEC 
 
 use crate::driver;
-use core::cell::Cell;
 use kernel::hil; 
 use kernel::{AppId, ReturnCode, Driver, Grant};
 
 pub const DRIVER_NUM: usize = driver::NUM::QDEC as usize;
 
-pub struct Qdec<'a> {
-    driver: &'a dyn hil::qdec::Qdec<'a>,
+pub struct QdecInterface<'a> {
+    driver: &'a dyn hil::qdec::QdecDriver,
     apps: Grant<App>,
 }
 
@@ -24,9 +23,9 @@ impl Default for App {
     }
 }
 
-impl Qdec<'a> {
-    pub fn new (driver: &'a dyn hil::qdec::Qdec<'a>, grant: Grant<App>) -> Qdec<'a> {
-        Qdec {
+impl QdecInterface<'a> {
+    pub fn new (driver: &'a dyn hil::qdec::QdecDriver, grant: Grant<App>) -> QdecInterface<'a> {
+        QdecInterface {
             driver: driver,
             apps: grant,
         }
@@ -42,12 +41,11 @@ impl Qdec<'a> {
     }
 }
 
-impl Driver for Qdec<'a> {
-    fn command (&self, command_num: usize, data: usize, data2: usize, appid: AppId) -> ReturnCode {
+impl Driver for QdecInterface<'a> {
+    fn command (&self, command_num: usize, _data: usize, _data2: usize, _appid: AppId) -> ReturnCode {
         match command_num {
             0 => ReturnCode::SUCCESS,
             1 => self.enable_qdec (),
-            //2 => self.get_rotation_changes (&self)
             _ => ReturnCode::ENOSUPPORT
         }
     }

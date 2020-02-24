@@ -4,11 +4,10 @@
 #![allow(dead_code)]
 #[allow(unused_imports)]
 use kernel::{create_capability, debug, debug_gpio, debug_verbose, static_init};
-
 use capsules::virtual_alarm::VirtualMuxAlarm;
 use capsules::virtual_spi::MuxSpiMaster;
 use capsules::virtual_uart::MuxUart;
-use capsules;
+use capsules::qdec::QdecInterface;
 use kernel::capabilities;
 use kernel::component::Component;
 use kernel::hil;
@@ -23,8 +22,6 @@ use kernel::common::dynamic_deferred_call::{DynamicDeferredCall, DynamicDeferred
 pub mod nrf52_components;
 use nrf52_components::ble::BLEComponent;
 use nrf52_components::ieee802154::Ieee802154Component;
-
-mod qdec_test;
 
 // Constants related to the configuration of the 15.4 network stack
 const SRC_MAC: u16 = 0xf00f;
@@ -77,7 +74,7 @@ impl UartPins {
     }
 }
 
-/// Pins for the UART
+/// Pins for the QDEC
 #[derive(Debug)]
 pub struct QdecPins {
     pin_a: Pin,
@@ -112,7 +109,7 @@ pub struct Platform {
     // The nRF52dk does not have the flash chip on it, so we make this optional.
     nonvolatile_storage:
         Option<&'static capsules::nonvolatile_storage_driver::NonvolatileStorage<'static>>,
-    qdec: &'static capsules::qdec::Qdec<'static>,
+    qdec: &'static capsules::qdec::QdecInterface<'static>,
     //_ => f(None),
 }
 
@@ -450,23 +447,29 @@ pub unsafe fn setup_board(
     );
     DynamicDeferredCall::set_global_instance(dynamic_deferred_call);
 
-    //We think this is needed bc the MBEDOS driver does that
+    //START: QDEC INITIALIZATION
     gpio_port[qdec_pins.pin_a].make_input();
     gpio_port[qdec_pins.pin_b].make_input();
     gpio_port[qdec_pins.pin_a].set_floating_state(FloatingState::PullUp);
     gpio_port[qdec_pins.pin_b].set_floating_state(FloatingState::PullUp);
 
-    // TODO: Use pinmux
-    debug!("Initializing QDEC test!");
-    let qdec = static_init!(
+    let qdec_pin_initialize = static_init!(
         Qdec,
         Qdec::new(
             nrf52::pinmux::Pinmux::new(qdec_pins.pin_a as u32),
             nrf52::pinmux::Pinmux::new(qdec_pins.pin_b as u32),
         )
     );
-    let qdec_test = qdec_test::initialize_all(mux_alarm, qdec);
+    let qdec = static_init!(
+        capsules::qdec::QdecInterface<'static>,
+        capsules::qdec::QdecInterface::new(
+            qdec_pin_initialize,
+            board_kernel.create_grant(&memory_allocation_capability)
+        )
+    );
     debug!("Testing: Qdec Initialized!");
+    //END: QDEC INITIALIZATION
+
     let platform = Platform {
         button: button,
         ble_radio: ble_radio,
@@ -478,7 +481,7 @@ pub unsafe fn setup_board(
         temp: temp,
         alarm: alarm,
         nonvolatile_storage: nonvolatile_storage,
-        qdec: capsules::qdec,
+        qdec: qdec,
         ipc: kernel::ipc::IPC::new(board_kernel, &memory_allocation_capability),
     };
 
@@ -486,8 +489,6 @@ pub unsafe fn setup_board(
 
     debug!("Initialization complete. Entering main loop\r");
     debug!("{}", &nrf52::ficr::FICR_INSTANCE);
-    qdec_test.start();
-    debug!("Started QDEC");
 
     extern "C" {
         /// Beginning of the ROM region containing app images.

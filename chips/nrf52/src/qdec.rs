@@ -10,7 +10,6 @@ use kernel::common::registers::{
 use kernel::ReturnCode;
 use kernel::common::StaticRef;
 use kernel::debug;
-use kernel::hil;
 use nrf5x::pinmux;
 // In this section I declare a struct called QdecRegisters, which contains all the
 // relevant registers as outlined in the Nordic 5x specification of the Qdec.
@@ -180,15 +179,12 @@ impl Qdec {
         );
         qdec
     }
-    /*pub fn set_pins(&self, pin_a: pinmux::Pinmux, pin_b: pinmux::Pinmux) {
-        );
-    }
-    */
-    /*
-    pub fn set_client(&self, client: &'static dyn CompareClient) {
+}
+    
+    /*pub fn set_client(&self, client: &'static dyn CompareClient) {
         self.client.set(client);
-    }
-    */
+    }*/
+    
 
     /// When an interrupt occurs, check to see if any
     /// of the interrupt register bits are set. If it
@@ -236,7 +232,7 @@ impl Qdec {
         self.registers.intenset.is_set(/*MACRO*/);
     }
     */
-    pub fn enable(&self) {
+    /*pub fn enable(&self) {
         let regs = &*self.registers;
         regs.enable.write(Task::ENABLE::SET);
         regs.sample_per.write(SampPer::SAMPLEPER.val(5));
@@ -255,6 +251,32 @@ impl Qdec {
     }
 
     pub fn get_acc(&self) -> u32 {
+        let regs = &*self.registers;
+        regs.tasks_readclracc.write(Task::ENABLE::SET);
+        regs.acc_read.read(Acc::ACC)
+    }*/
+
+//TODO: FIX SPACING!
+impl kernel::hil::qdec::QdecDriver for Qdec {
+    fn enable(&self) {
+        let regs = &*self.registers;
+        regs.enable.write(Task::ENABLE::SET);
+        regs.sample_per.write(SampPer::SAMPLEPER.val(5));
+        regs.tasks_start.write(Task::ENABLE::SET);
+        debug!("Enabled!");
+    }
+
+    fn is_enabled(&self) -> ReturnCode {
+        let regs = &*self.registers;
+        let result = if regs.enable.is_set(Task::ENABLE) {
+                        ReturnCode::SUCCESS
+                     } else {
+                        ReturnCode::FAIL
+                     };
+        result
+    }
+
+    fn get_acc(&self) -> u32 {
         let regs = &*self.registers;
         regs.tasks_readclracc.write(Task::ENABLE::SET);
         regs.acc_read.read(Acc::ACC)
