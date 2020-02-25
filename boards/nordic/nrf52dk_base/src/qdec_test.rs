@@ -4,6 +4,7 @@ use kernel::hil::time;
 use kernel::hil::time::{Alarm, Frequency};
 use kernel::{debug, static_init};
 use nrf52::qdec::Qdec;
+use kernel::hil::qdec::QdecDriver;
 //use nrf5x::pinmux;
 
 pub const TEST_DELAY_MS: u32 = 1000;
@@ -32,12 +33,16 @@ pub unsafe fn initialize_all(
         }
     );
     qdec_alarm.set_client(qdec_test);
+    qdec_test.qdec.set_client(qdec_test);
     qdec_test
 }
 
 impl<'a, A: time::Alarm<'a>> QdecTest<'a, A> {
     pub fn start(&self) {
-        self.qdec.enable();
+        self.qdec.enable_qdec();
+        debug!("Is enabled?");
+        self.qdec.enable_interrupts_qdec();
+        debug!("Is interruptable?");
         self.schedule_next();
     }
 
@@ -50,9 +55,17 @@ impl<'a, A: time::Alarm<'a>> QdecTest<'a, A> {
 
 impl<'a, A: time::Alarm<'a>> time::AlarmClient for QdecTest<'a, A> {
     fn fired(&self) {
+        self.qdec.enable_qdec();
+        //self.qdec.enable_interrupts_qdec();
         let acc = self.qdec.get_acc();
-        debug!("Is enabled: {:?}", self.qdec.is_enabled());
+        debug!("Is enabled?");
         debug!("Acc: {:?}", acc);
         self.schedule_next();
     }
+}
+
+impl<'a, A: time::Alarm<'a>> kernel::hil::qdec::QdecClient for QdecTest<'a, A> {
+ fn sample_ready (&self, acc:u32) { //TODO go back and change name
+     debug!("Val:{:?}", acc);
+ }
 }

@@ -159,6 +159,8 @@ register_bitfields![u32,
 const QDEC_BASE: StaticRef<QdecRegisters> =
     unsafe { StaticRef::new(0x40012000 as *const QdecRegisters) };
 
+pub static mut QDEC: Qdec = Qdec::new();
+
 /// Qdec type declaration: gives the Qdec instance registers and a client
 pub struct Qdec {
     registers: StaticRef<QdecRegisters>,
@@ -168,19 +170,30 @@ pub struct Qdec {
 /// Qdec impl: provides the Qdec type with vital functionality including:
 /// FIRST DESIRED FUNCTIONALITY: new(arg1, arg2, ..., argN) -> define Qdec struct
 impl Qdec {
-    pub unsafe fn new(pin_a: pinmux::Pinmux, pin_b: pinmux::Pinmux) -> Qdec {
+    //TODO ok to be safe
+    const fn new() -> Qdec {
         let qdec = Qdec {
             registers: QDEC_BASE,
             client: OptionalCell::empty(),
         };
-        let regs = qdec.registers;
+        /*let regs = qdec.registers;
+        regs.psel_a.write(
+            PinSelect::Pin.val(pin_a.into()) + PinSelect::Port.val(0) + PinSelect::Connect.val(0),
+        );
+        regs.psel_b.write(
+            PinSelect::Pin.val(pin_b.into()) + PinSelect::Port.val(0) + PinSelect::Connect.val(0),
+        );*/
+        qdec
+    }
+
+    pub fn set_pins(&self, pin_a: pinmux::Pinmux, pin_b: pinmux::Pinmux) {
+         let regs = self.registers;
         regs.psel_a.write(
             PinSelect::Pin.val(pin_a.into()) + PinSelect::Port.val(0) + PinSelect::Connect.val(0),
         );
         regs.psel_b.write(
             PinSelect::Pin.val(pin_b.into()) + PinSelect::Port.val(0) + PinSelect::Connect.val(0),
         );
-        qdec
     }
 
     
@@ -195,7 +208,7 @@ impl Qdec {
     /// TODO: DO I NEED TO DISABLE INTERRUPTS
     /// TODO: ADD CLIENT CODE TO HIL/CAPSULE/LIB
     pub fn handle_interrupt(&self) {
-        self.disable_interrupts();
+        //self.disable_interrupts();
         self.client.map(|client| {
             let mut val = 0;
             // For each of 4 possible compare events, if it's happened,
@@ -211,12 +224,18 @@ impl Qdec {
                         2 => Inte::ACCOF::SET,
                         3 => Inte::DBLRDY::SET,
                         4 => Inte::STOPPED::SET,
-                        _ => Inte::STOPPED::SET,
+                        _ => Inte::STOPPED::SET, //TODO throw an error?
                     };
                     self.registers.intenclr.write(interrupt_bit);
                 }
             }
-            client.compare(val as u32);
+            let regs = &*self.registers;
+            //self.enable_interrupts();
+            regs.tasks_readclracc.write(Task::ENABLE::SET);
+            let val_ret = regs.acc_read.read(Acc::ACC);
+        //TODO things
+            debug!("Val!!");
+            client.sample_ready (val_ret); 
         });
     }
 
@@ -224,6 +243,12 @@ impl Qdec {
     fn enable_interrupts(&self) { //IS THIS THE RIGHT MACRO TO USE?
         let regs = &*self.registers;
         regs.intenset.write(Inte::SAMPLERDY::SET);
+        regs.intenset.write(Inte::SAMPLERDY::ENABLED);
+        regs.intenset.write(Inte::REPORTRDY::SET);
+        regs.intenset.write(Inte::ACCOF::SET);
+        regs.intenset.write(Inte::DBLRDY::SET);
+        regs.intenset.write(Inte::STOPPED::SET);
+        //ReturnCode::SUCCESS
     }
 
     fn disable_interrupts(&self) {
@@ -261,9 +286,13 @@ impl kernel::hil::qdec::QdecDriver for Qdec {
         self.is_enabled()
     }
 
+    fn enable_interrupts_qdec (&self) {
+        self.enable_interrupts();
+    }
+
     fn get_acc(&self) -> u32 {
         let regs = &*self.registers;
-        self.enable_interrupts();
+        //self.enable_interrupts();
         regs.tasks_readclracc.write(Task::ENABLE::SET);
         regs.acc_read.read(Acc::ACC)
     }

@@ -7,10 +7,11 @@
 
 use crate::returncode::ReturnCode;
 
-pub trait QdecDriver {
+pub trait QdecDriver { /* TODO: change name sometime */
   
   fn set_client(&self, client: &'static dyn QdecClient);  
  
+  fn enable_interrupts_qdec (&self);
   /*fn enable(&self);
 
   fn is_enabled (&self) -> ReturnCode;*/
@@ -21,7 +22,7 @@ pub trait QdecDriver {
 }
 
 pub trait QdecClient {
-    fn compare (&self, val: u32) -> bool;
- 
-    fn callback(&self, value: usize);
+    fn sample_ready (&self, val: u32);
+
+    //fn callback(&self, value: usize);
 }

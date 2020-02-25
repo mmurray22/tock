@@ -7,6 +7,7 @@ use crate::nvmc;
 use crate::power;
 use crate::spi;
 use crate::uart;
+use crate::qdec;
 use cortexm4::{self, nvic};
 use kernel::common::deferred_call;
 use kernel::debug;
@@ -111,6 +112,7 @@ impl kernel::Chip for NRF52 {
                         }
                         peripheral_interrupts::SPIM2_SPIS2_SPI2 => spi::SPIM2.handle_interrupt(),
                         peripheral_interrupts::ADC => adc::ADC.handle_interrupt(),
+                        peripheral_interrupts::QDEC => qdec::QDEC.handle_interrupt(),
                         _ => debug!("NvicIdx not supported by Tock"),
                     }
                     let n = nvic::Nvic::new(interrupt);

@@ -55,8 +55,8 @@ impl QdecInterface<'a> {
     }
 }
 
-impl hil::qdec::QdecClient for QdecInterface<'a> {
-    fn callback(&self, qdec_val: usize) {
+/*TODO: impl hil::qdec::QdecClient for QdecInterface<'a> {
+  /*  fn callback(&self, qdec_val: usize) {
         for cntr in self.apps.iter() {
             cntr.enter(|app, _| {
                 if app.subscribed {
@@ -65,12 +65,9 @@ impl hil::qdec::QdecClient for QdecInterface<'a> {
                     app.callback.map(|mut cb| cb.schedule(qdec_val, 0,0));                }
             });
         }
-    }
+    }*/
 
-    fn compare (&self, val: u32) -> bool {
-        val > 0
-    }
-}
+}*/
 
 impl Driver for QdecInterface<'a> {
     fn subscribe(

@@ -12,12 +12,11 @@ use kernel::component::Component;
 use kernel::hil;
 use kernel::hil::gpio::{Configure, FloatingState};
 use nrf52::gpio::Pin;
-use nrf52::qdec::Qdec;
 use nrf52::rtc::Rtc;
 use nrf52::uicr::Regulator0Output;
 
 use kernel::common::dynamic_deferred_call::{DynamicDeferredCall, DynamicDeferredCallClientState};
-
+pub mod qdec_test;
 pub mod nrf52_components;
 use nrf52_components::ble::BLEComponent;
 use nrf52_components::ieee802154::Ieee802154Component;
@@ -108,7 +107,7 @@ pub struct Platform {
     // The nRF52dk does not have the flash chip on it, so we make this optional.
     nonvolatile_storage:
         Option<&'static capsules::nonvolatile_storage_driver::NonvolatileStorage<'static>>,
-    qdec: &'static capsules::qdec::QdecInterface<'static>,
+    //qdec: &'static capsules::qdec::QdecInterface<'static>,
     //_ => f(None),
 }
 
@@ -124,7 +123,7 @@ impl kernel::Platform for Platform {
             capsules::led::DRIVER_NUM => f(Some(self.led)),
             capsules::button::DRIVER_NUM => f(Some(self.button)),
             capsules::rng::DRIVER_NUM => f(Some(self.rng)),
-            capsules::qdec::DRIVER_NUM => f(Some(self.qdec)),
+            //capsules::qdec::DRIVER_NUM => f(Some(self.qdec)),
             capsules::ble_advertising_driver::DRIVER_NUM => f(Some(self.ble_radio)),
             capsules::ieee802154::DRIVER_NUM => match self.ieee802154_radio {
                 Some(radio) => f(Some(radio)),
@@ -452,22 +451,22 @@ pub unsafe fn setup_board(
     gpio_port[qdec_pins.pin_a].set_floating_state(FloatingState::PullUp);
     gpio_port[qdec_pins.pin_b].set_floating_state(FloatingState::PullUp);
 
-    let qdec_pin_initialize = static_init!(
-        Qdec,
-        Qdec::new(
+    let qdec_nrf52 = &mut nrf52::qdec::QDEC;
+    qdec_nrf52.set_pins(
             nrf52::pinmux::Pinmux::new(qdec_pins.pin_a as u32),
             nrf52::pinmux::Pinmux::new(qdec_pins.pin_b as u32),
-        )
-    );
-    let qdec = static_init!(
+        );
+    /*let qdec = static_init!(
         capsules::qdec::QdecInterface<'static>,
         capsules::qdec::QdecInterface::new(
             qdec_pin_initialize,
             board_kernel.create_grant(&memory_allocation_capability)
         )
-    );
-    kernel::hil::qdec::QdecDriver::set_client(qdec_pin_initialize, qdec);
-    debug!("Testing: Qdec Initialized!");
+    );*/
+    //kernel::hil::qdec::QdecDriver::set_client(qdec_pin_initialize, qdec);
+    let qdec_test = qdec_test::initialize_all(mux_alarm, qdec_nrf52);
+    //qdec_nrf52.set_client(qdec_test);
+    //debug!("Testing: Qdec Initialized!"); TODO DELETE DEBUG STATEMENTS
     //END: QDEC INITIALIZATION
 
     let platform = Platform {
@@ -481,13 +480,14 @@ pub unsafe fn setup_board(
         temp: temp,
         alarm: alarm,
         nonvolatile_storage: nonvolatile_storage,
-        qdec: qdec,
+       // qdec: qdec,
         ipc: kernel::ipc::IPC::new(board_kernel, &memory_allocation_capability),
     };
 
     let chip = static_init!(nrf52::chip::NRF52, nrf52::chip::NRF52::new(gpio_port));
 
     debug!("Initialization complete. Entering main loop\r");
+    qdec_test.start();
     debug!("{}", &nrf52::ficr::FICR_INSTANCE);
 
     extern "C" {
