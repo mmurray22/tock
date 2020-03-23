@@ -2,10 +2,11 @@
 
 use crate::driver;
 use kernel::hil;
+use kernel::debug;
 use core::cell::Cell;
 use kernel::{AppId, Callback, ReturnCode, Driver, Grant};
 
-pub const DRIVER_NUM: usize = driver::NUM::QDEC as usize;
+pub const DRIVER_NUM: usize = driver::NUM::Qdec as usize;
 
 pub struct QdecInterface<'a> {
     driver: &'a dyn hil::qdec::QdecDriver,
@@ -31,18 +32,28 @@ impl QdecInterface<'a> {
         }
     }
     
-    fn enqueue_command(&self, appid: AppId) -> ReturnCode {
+    fn enable_qdec_command(&self, appid: AppId) -> ReturnCode {
+        self.driver.enable_qdec()
+    }
+
+    fn enable_qdec_interrupts(&self, appid: AppId) -> ReturnCode {
         self.apps
             .enter(appid, |app, _| {
                 if !self.busy.get() {
                     app.subscribed = true;
                     self.busy.set(true);
-                    self.driver.enable_qdec()
+                    self.driver.enable_interrupts_qdec(); //TODO names
+                    ReturnCode::SUCCESS
                 } else {
                     ReturnCode::EBUSY
                 }
             })
             .unwrap_or_else(|err| err.into())
+    }
+
+
+    fn get_qdec_acc(&self) -> u32 {
+                    self.driver.get_acc()
     }
 
     fn configure_callback(&self, callback: Option<Callback>, app_id: AppId) -> ReturnCode {
@@ -55,8 +66,8 @@ impl QdecInterface<'a> {
     }
 }
 
-/*TODO: impl hil::qdec::QdecClient for QdecInterface<'a> {
-  /*  fn callback(&self, qdec_val: usize) {
+impl hil::qdec::QdecClient for QdecInterface<'a> {
+    fn callback(&self, qdec_val: usize) {
         for cntr in self.apps.iter() {
             cntr.enter(|app, _| {
                 if app.subscribed {
@@ -65,9 +76,12 @@ impl QdecInterface<'a> {
                     app.callback.map(|mut cb| cb.schedule(qdec_val, 0,0));                }
             });
         }
-    }*/
+    }
 
-}*/
+    fn sample_ready (&self, acc:u32) { //TODO go back and change name
+     debug!("Val:{:?}", acc);
+    }
+}
 
 impl Driver for QdecInterface<'a> {
     fn subscribe(
@@ -85,9 +99,18 @@ impl Driver for QdecInterface<'a> {
 
     fn command (&self, command_num: usize, _: usize, _: usize, appid: AppId) -> ReturnCode {
         match command_num {
+            //dummy value
             0 => ReturnCode::SUCCESS,
-            1 => self.enqueue_command (appid),
-            //2 => self.get_acc(), 
+            // enable qdec
+            1 => self.enable_qdec_command (appid),
+            // enable interrupts
+            2 => self.enable_qdec_interrupts (appid), 
+            //get qdec acc
+            3 =>
+              ReturnCode::SuccessWithValue{
+                value: self.get_qdec_acc() as usize,
+              },
+            //default
             _ => ReturnCode::ENOSUPPORT
         }
     }

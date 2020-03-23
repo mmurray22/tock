@@ -60,6 +60,6 @@ pub enum NUM {
 
     // Misc
     Buzzer                = 0x90000,
-    QDEC                  = 0x90001,
+    Qdec                  = 0x90001,
 }
 }

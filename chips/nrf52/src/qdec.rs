@@ -66,6 +66,8 @@ register_structs! {
         (0x520 => psel_a: ReadWrite<u32, PinSelect::Register>),
         (0x524 => psel_b: ReadWrite<u32, PinSelect::Register>),
         (0x528 => reserved5),
+        (0x544 => accdbl: ReadOnly<u32, AccDbl::Register>),
+        (0x548 => accdbl_read: ReadOnly<u32, AccDbl::Register>),
         (0x550 => @END),
     }
 }
@@ -151,6 +153,9 @@ register_bitfields![u32,
     ],
     Acc [
         ACC OFFSET(0) NUMBITS(32)
+    ],
+    AccDbl [
+        ACCDBL OFFSET(0) NUMBITS(4)
     ]
 ];
 
@@ -176,13 +181,6 @@ impl Qdec {
             registers: QDEC_BASE,
             client: OptionalCell::empty(),
         };
-        /*let regs = qdec.registers;
-        regs.psel_a.write(
-            PinSelect::Pin.val(pin_a.into()) + PinSelect::Port.val(0) + PinSelect::Connect.val(0),
-        );
-        regs.psel_b.write(
-            PinSelect::Pin.val(pin_b.into()) + PinSelect::Port.val(0) + PinSelect::Connect.val(0),
-        );*/
         qdec
     }
 
@@ -208,7 +206,7 @@ impl Qdec {
     /// TODO: DO I NEED TO DISABLE INTERRUPTS
     /// TODO: ADD CLIENT CODE TO HIL/CAPSULE/LIB
     pub fn handle_interrupt(&self) {
-        //self.disable_interrupts();
+        self.disable_interrupts();
         self.client.map(|client| {
             let mut val = 0;
             // For each of 4 possible compare events, if it's happened,
@@ -237,18 +235,17 @@ impl Qdec {
             debug!("Val!!");
             client.sample_ready (val_ret); 
         });
+        self.enable_interrupts();
     }
 
     // NOTE: ALL INTERRUPTS ARE ONLY FOR SAMPLING RIGHT NOW 
     fn enable_interrupts(&self) { //IS THIS THE RIGHT MACRO TO USE?
         let regs = &*self.registers;
         regs.intenset.write(Inte::SAMPLERDY::SET);
-        regs.intenset.write(Inte::SAMPLERDY::ENABLED);
         regs.intenset.write(Inte::REPORTRDY::SET);
         regs.intenset.write(Inte::ACCOF::SET);
         regs.intenset.write(Inte::DBLRDY::SET);
         regs.intenset.write(Inte::STOPPED::SET);
-        //ReturnCode::SUCCESS
     }
 
     fn disable_interrupts(&self) {
@@ -274,20 +271,18 @@ impl Qdec {
         result
     }
 
-    /*fn interrupts_enabled(&self) -> bool {
-        let regs = &*self.registers;
-        self.registers.intenset.is_set(Inte::SAMPLERDY)
-    }i*/
 }    
 //TODO: FIX SPACING!
 impl kernel::hil::qdec::QdecDriver for Qdec { 
-    fn enable_qdec (&self) -> ReturnCode {
-        self.enable();
-        self.is_enabled()
+    fn enable_interrupts_qdec (&self) {
+       self.enable_interrupts();
     }
 
-    fn enable_interrupts_qdec (&self) {
-        self.enable_interrupts();
+    fn enable_qdec (&self) -> ReturnCode {
+        //Maybe expose to HIL
+        self.registers.sample_per.write(SampPer::SAMPLEPER::ms131);
+        self.enable();
+        self.is_enabled()
     }
 
     fn get_acc(&self) -> u32 {

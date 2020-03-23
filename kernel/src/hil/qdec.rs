@@ -24,5 +24,5 @@ pub trait QdecDriver { /* TODO: change name sometime */
 pub trait QdecClient {
     fn sample_ready (&self, val: u32);
 
-    //fn callback(&self, value: usize);
+    fn callback(&self, value: usize);
 }
