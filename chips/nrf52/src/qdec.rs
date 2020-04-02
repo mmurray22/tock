@@ -224,7 +224,11 @@ impl Qdec {
                         4 => Inte::STOPPED::SET,
                         _ => Inte::STOPPED::SET, //TODO throw an error?
                     };
-                    self.registers.intenclr.write(interrupt_bit);
+                    if i == 0 {
+                        self.registers.intenclr.write(interrupt_bit);
+                    } else if i == 4 {
+                        debug!("Received stopped signal!");
+                    }
                 }
             }
             let regs = &*self.registers;
@@ -272,6 +276,7 @@ impl Qdec {
     }
 
 }    
+
 //TODO: FIX SPACING!
 impl kernel::hil::qdec::QdecDriver for Qdec { 
     fn enable_interrupts_qdec (&self) {
@@ -280,9 +285,15 @@ impl kernel::hil::qdec::QdecDriver for Qdec {
 
     fn enable_qdec (&self) -> ReturnCode {
         //Maybe expose to HIL
-        self.registers.sample_per.write(SampPer::SAMPLEPER::ms131);
+        //self.registers.sample_per.write(SampPer::SAMPLEPER::ms131);
         self.enable();
         self.is_enabled()
+    }
+
+    fn set_sample_rate (&self) {
+        self.registers.intenset.write(Inte::STOPPED::SET);
+        self.registers.sample_per.write(SampPer::SAMPLEPER::ms131);
+        self.registers.intenclr.write(Inte::STOPPED::SET);
     }
 
     fn get_acc(&self) -> u32 {

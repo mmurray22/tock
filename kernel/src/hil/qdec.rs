@@ -12,10 +12,9 @@ pub trait QdecDriver { /* TODO: change name sometime */
   fn set_client(&self, client: &'static dyn QdecClient);  
  
   fn enable_interrupts_qdec (&self);
-  /*fn enable(&self);
-
-  fn is_enabled (&self) -> ReturnCode;*/
-
+  
+  fn set_sample_rate (&self);
+  
   fn enable_qdec (&self) -> ReturnCode;
 
   fn get_acc (&self) -> u32;

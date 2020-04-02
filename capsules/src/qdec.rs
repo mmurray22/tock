@@ -53,7 +53,8 @@ impl QdecInterface<'a> {
 
 
     fn get_qdec_acc(&self) -> u32 {
-                    self.driver.get_acc()
+       self.driver.set_sample_rate();
+       self.driver.get_acc()
     }
 
     fn configure_callback(&self, callback: Option<Callback>, app_id: AppId) -> ReturnCode {
