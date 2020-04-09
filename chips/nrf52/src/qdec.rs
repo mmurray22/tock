@@ -205,6 +205,7 @@ impl Qdec {
     /// TODO: ADD CLIENT CODE TO HIL/CAPSULE/LIB
     pub fn handle_interrupt(&self) {
         self.disable_interrupts();
+        let regs = &*self.registers;
         self.client.map(|client| {
             let mut val = 0;
             // For each of 4 possible compare events, if it's happened,
@@ -216,20 +217,24 @@ impl Qdec {
                     // Disable corresponding interrupt
                     let interrupt_bit = match i {
                         0 => Inte::SAMPLERDY::SET,
-                        1 => Inte::REPORTRDY::SET,
-                        2 => Inte::ACCOF::SET,
-                        3 => Inte::DBLRDY::SET,
+                        //1 => Inte::REPORTRDY::SET,
+                        //2 => Inte::ACCOF::SET,
+                        //3 => Inte::DBLRDY::SET,
                         4 => Inte::STOPPED::SET,
                         _ => Inte::STOPPED::SET, //TODO throw an error?
                     };
                     if i == 0 {
                         self.registers.intenclr.write(interrupt_bit);
+                        regs.tasks_readclracc.write(Task::ENABLE::SET);
+                        let val_ret = regs.acc_read.read(Acc::ACC);
+                        client.sample_ready (val_ret); 
                     } else if i == 4 {
                         debug!("Received stopped signal!");
+                        regs.sample_per.write(SampPer::SAMPLEPER.val(5));
                     }
                 }
             }
-            let regs = &*self.registers;
+            
             regs.tasks_readclracc.write(Task::ENABLE::SET);
             let val_ret = regs.acc_read.read(Acc::ACC);
             client.sample_ready (val_ret); 
@@ -248,11 +253,17 @@ impl Qdec {
         let regs = &*self.registers;
         regs.intenclr.write(Inte::SAMPLERDY::SET);
     }
-    
+
+    fn set_sample_rate (&self) {
+        regs.intenset.write(Inte::STOPPED::SET);
+        regs.sample_per.write(SampPer::SAMPLEPER.val(5));
+        /*TODO*/
+    }
+
     fn enable(&self) {
         let regs = &*self.registers;
         regs.enable.write(Task::ENABLE::SET);
-        regs.sample_per.write(SampPer::SAMPLEPER.val(5)); /*Taken care of?*/
+        regs.sample_per.write(SampPer::SAMPLEPER.val(5));
         regs.tasks_start.write(Task::ENABLE::SET);
         debug!("Enabled!");
     }
@@ -279,6 +290,7 @@ impl kernel::hil::qdec::QdecDriver for Qdec {
         //Maybe expose to HIL
         //self.registers.sample_per.write(SampPer::SAMPLEPER::ms131);
         self.enable();
+        self.set_sample_rate();
         self.is_enabled()
     }
 
