@@ -166,10 +166,17 @@ const QDEC_BASE: StaticRef<QdecRegisters> =
 
 pub static mut QDEC: Qdec = Qdec::new();
 
+enum QdecState {
+    SAMPLE_RATE_STOP,
+    START,
+}
+
 /// Qdec type declaration: gives the Qdec instance registers and a client
 pub struct Qdec {
     registers: StaticRef<QdecRegisters>,
     client: OptionalCell<&'static dyn kernel::hil::qdec::QdecClient>,
+    state: QdecState, /*correct enum declaration?*/
+    sample_rate: u32,
 }
 
 /// Qdec impl: provides the Qdec type with vital functionality including:
@@ -180,6 +187,7 @@ impl Qdec {
         let qdec = Qdec {
             registers: QDEC_BASE,
             client: OptionalCell::empty(),
+            state: QdecState::START,
         };
         qdec
     }
@@ -221,29 +229,23 @@ impl Qdec {
                         //2 => Inte::ACCOF::SET,
                         //3 => Inte::DBLRDY::SET,
                         4 => Inte::STOPPED::SET,
-                        _ => Inte::STOPPED::SET, //TODO throw an error?
+                        _ => panic!("Unknown interrupt value!"),
                     };
                     if i == 0 {
-                        self.registers.intenclr.write(interrupt_bit);
-                        regs.tasks_readclracc.write(Task::ENABLE::SET);
-                        let val_ret = regs.acc_read.read(Acc::ACC);
-                        client.sample_ready (val_ret); 
-                    } else if i == 4 {
+                        client.sample_ready (); 
+                    } else if i == 4 && self.qdec.state == SAMPLE_RATE_STOP {
                         debug!("Received stopped signal!");
                         regs.sample_per.write(SampPer::SAMPLEPER.val(5));
+                        regs.task_start.write(Task::ENABLE::SET);
                     }
                 }
             }
-            
-            regs.tasks_readclracc.write(Task::ENABLE::SET);
-            let val_ret = regs.acc_read.read(Acc::ACC);
-            client.sample_ready (val_ret); 
         });
         self.enable_interrupts();
     }
 
     // NOTE: ALL INTERRUPTS ARE ONLY FOR SAMPLING RIGHT NOW 
-    fn enable_interrupts(&self) { //IS THIS THE RIGHT MACRO TO USE?
+    fn enable_interrupts(&self) {
         let regs = &*self.registers;
         regs.intenset.write(Inte::SAMPLERDY::SET);
         regs.intenset.write(Inte::STOPPED::SET); /*SET SAMPLE READY*/
@@ -254,16 +256,16 @@ impl Qdec {
         regs.intenclr.write(Inte::SAMPLERDY::SET);
     }
 
-    fn set_sample_rate (&self) {
-        regs.intenset.write(Inte::STOPPED::SET);
-        regs.sample_per.write(SampPer::SAMPLEPER.val(5));
-        /*TODO*/
+    fn set_sample_rate (&self) { 
+        regs.task_stop.write(Task::ENABLE::SET);
+        self.qdec.state = SAMPLE_RATE_STOP;
+        regs.tasks_stop.write(Task::ENABLE::SET); /*induce stop*/
     }
 
     fn enable(&self) {
         let regs = &*self.registers;
         regs.enable.write(Task::ENABLE::SET);
-        regs.sample_per.write(SampPer::SAMPLEPER.val(5));
+        set_sample_rate(); /*set sample rate to maximum sample rate*/
         regs.tasks_start.write(Task::ENABLE::SET);
         debug!("Enabled!");
     }

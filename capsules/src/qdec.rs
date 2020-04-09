@@ -44,13 +44,12 @@ impl QdecInterface<'a> {
 }
 
 impl hil::qdec::QdecClient for QdecInterface<'a> {
-    fn sample_ready (&self, qdec_val: usize) {
+    fn sample_ready (&self) {
         for cntr in self.apps.iter() {
             cntr.enter(|app, _| {
                 if app.subscribed {
-                    self.curr_acc = self.driver.get_acc();
                     app.subscribed = false;
-                    app.callback.map(|mut cb| cb.schedule(qdec_val, 0,0));                }
+                    app.callback.map(|mut cb| cb.schedule(self.driver.get_acc(), 0,0));                }
             });
         }
     }
