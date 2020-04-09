@@ -44,11 +44,11 @@ impl QdecInterface<'a> {
 }
 
 impl hil::qdec::QdecClient for QdecInterface<'a> {
-    fn sample_rate (&self, qdec_val: usize) {
+    fn sample_ready (&self, qdec_val: usize) {
         for cntr in self.apps.iter() {
             cntr.enter(|app, _| {
                 if app.subscribed {
-                    self.driver.get_acc(); /*TODO*/
+                    self.curr_acc = self.driver.get_acc();
                     app.subscribed = false;
                     app.callback.map(|mut cb| cb.schedule(qdec_val, 0,0));                }
             });
@@ -74,15 +74,18 @@ impl Driver for QdecInterface<'a> {
         match command_num {
             //dummy value
             0 => ReturnCode::SUCCESS,
-            // enable qdec
+            //enable qdec
             1 => self.driver.enable(),
-            // enable interrupts
-            2 => self.enable_qdec_interrupts (appid), 
             //get qdec acc
-            3 =>
-              ReturnCode::SuccessWithValue{
+            2 =>
+              ReturnCode::SuccessWithValue {
                 value: self.get_acc() as usize,
               },
+            //
+            /*TODO: any others? 3 =>
+              ReturnCode::SuccessWithValue {
+                value: 
+              }*/
             //default
             _ => ReturnCode::ENOSUPPORT
         }
