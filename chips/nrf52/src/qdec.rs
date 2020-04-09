@@ -194,11 +194,9 @@ impl Qdec {
         );
     }
 
-    
     pub fn set_client(&self, client: &'static dyn kernel::hil::qdec::QdecClient) {
         self.client.set(client);
     }
-    
 
     /// When an interrupt occurs, check to see if any
     /// of the interrupt register bits are set. If it
@@ -232,11 +230,8 @@ impl Qdec {
                 }
             }
             let regs = &*self.registers;
-            //self.enable_interrupts();
             regs.tasks_readclracc.write(Task::ENABLE::SET);
             let val_ret = regs.acc_read.read(Acc::ACC);
-        //TODO things
-            debug!("Val!!");
             client.sample_ready (val_ret); 
         });
         self.enable_interrupts();
@@ -246,10 +241,7 @@ impl Qdec {
     fn enable_interrupts(&self) { //IS THIS THE RIGHT MACRO TO USE?
         let regs = &*self.registers;
         regs.intenset.write(Inte::SAMPLERDY::SET);
-        regs.intenset.write(Inte::REPORTRDY::SET);
-        regs.intenset.write(Inte::ACCOF::SET);
-        regs.intenset.write(Inte::DBLRDY::SET);
-        regs.intenset.write(Inte::STOPPED::SET);
+        regs.intenset.write(Inte::STOPPED::SET); /*SET SAMPLE READY*/
     }
 
     fn disable_interrupts(&self) {
@@ -260,7 +252,7 @@ impl Qdec {
     fn enable(&self) {
         let regs = &*self.registers;
         regs.enable.write(Task::ENABLE::SET);
-        regs.sample_per.write(SampPer::SAMPLEPER.val(5));
+        regs.sample_per.write(SampPer::SAMPLEPER.val(5)); /*Taken care of?*/
         regs.tasks_start.write(Task::ENABLE::SET);
         debug!("Enabled!");
     }
@@ -279,7 +271,7 @@ impl Qdec {
 
 //TODO: FIX SPACING!
 impl kernel::hil::qdec::QdecDriver for Qdec { 
-    fn enable_interrupts_qdec (&self) {
+    fn enable_interrupts (&self) {
        self.enable_interrupts();
     }
 
