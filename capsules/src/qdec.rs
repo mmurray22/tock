@@ -11,11 +11,6 @@
 //! );
 //! kernel::hil::QdecDriver.set_client(qdec);
 //! ````
-//!
-//! #Number of Qdecs
-//! The number of qdecs available depends on the
-//! board/microcontroller
-//!
 //! #Interrupt Spurred Readings versus Regular Readings
 //! An application can either enable interrupts to get the
 //! accumulation value or manually read it whenever it wants
@@ -53,7 +48,6 @@ impl QdecInterface<'a> {
         }
     }
 
-    /// Configure callback
     fn configure_callback(&self, callback: Option<Callback>, app_id: AppId)
         -> ReturnCode {
         self.driver.enable_interrupts();

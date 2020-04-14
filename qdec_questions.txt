@@ -1,5 +1,0 @@
-Do I need to implement an HIL for the QDEC?
-
-Since QDEC is going to be a capsule, it will need to be taken into acconut in the hardware-interface-layer right?
-
- 

@@ -73,7 +73,7 @@ register_structs! {
 }
 
 // In this section, I initialize all the bitfields associated with the type
-// of register assigned to each member of the struct above. (is that right?)
+// of register assigned to each member of the struct above. 
 register_bitfields![u32,
     Task [
         ENABLE 0
@@ -175,14 +175,12 @@ enum QdecState {
 pub struct Qdec {
     registers: StaticRef<QdecRegisters>,
     client: OptionalCell<&'static dyn kernel::hil::qdec::QdecClient>,
-    state: QdecState, /*correct enum declaration?*/
+    state: QdecState,
     sample_rate: u32,
 }
 
 /// Qdec impl: provides the Qdec type with vital functionality including:
-/// FIRST DESIRED FUNCTIONALITY: new(arg1, arg2, ..., argN) -> define Qdec struct
 impl Qdec {
-    //TODO ok to be safe
     const fn new() -> Qdec {
         let qdec = Qdec {
             registers: QDEC_BASE,
@@ -192,6 +190,7 @@ impl Qdec {
         qdec
     }
 
+    /// sets pins_a and pins_b to be the output pins for whatever the encoding device is  
     pub fn set_pins(&self, pin_a: pinmux::Pinmux, pin_b: pinmux::Pinmux) {
          let regs = self.registers;
         regs.psel_a.write(
@@ -209,8 +208,6 @@ impl Qdec {
     /// When an interrupt occurs, check to see if any
     /// of the interrupt register bits are set. If it
     /// is, then put it in the client's bitmask
-    /// TODO: DO I NEED TO DISABLE INTERRUPTS
-    /// TODO: ADD CLIENT CODE TO HIL/CAPSULE/LIB
     pub fn handle_interrupt(&self) {
         self.disable_interrupts();
         let regs = &*self.registers;
@@ -218,7 +215,7 @@ impl Qdec {
             let mut val = 0;
             // For each of 4 possible compare events, if it's happened,
             // clear it and sort its bit in val to pass in callback
-            for i in 0..4 { // TODO: either add events_compare or add each individual register
+            for i in 0..regs.events_arr.len() {
                 if self.registers.events_arr[i].is_set(Event::READY) {
                     val = val | 1 << i;
                     self.registers.events_arr[i].write(Event::READY::CLEAR);
@@ -229,14 +226,14 @@ impl Qdec {
                         //2 => Inte::ACCOF::SET,
                         //3 => Inte::DBLRDY::SET,
                         4 => Inte::STOPPED::SET,
-                        _ => panic!("Unknown interrupt value!"),
+                        _ => panic!("Unsupported interrupt value!"),
                     };
-                    if i == 0 {
+                    if interrupt_bit == 0 {
                         client.sample_ready (); 
-                    } else if i == 4 && self.qdec.state == SAMPLE_RATE_STOP {
-                        debug!("Received stopped signal!");
+                    } else if interrupt_bit == 4 && self.qdec.state == SAMPLE_RATE_STOP {
                         regs.sample_per.write(SampPer::SAMPLEPER.val(5));
                         regs.task_start.write(Task::ENABLE::SET);
+                        self.qdec.state = START;
                     }
                 }
             }
@@ -244,14 +241,12 @@ impl Qdec {
         self.enable_interrupts();
     }
 
-    // NOTE: ALL INTERRUPTS ARE ONLY FOR SAMPLING RIGHT NOW 
-    fn enable_interrupts(&self) {
+    fn enable_samplerdy_interrupts(&self) {
         let regs = &*self.registers;
-        regs.intenset.write(Inte::SAMPLERDY::SET);
-        regs.intenset.write(Inte::STOPPED::SET); /*SET SAMPLE READY*/
+        regs.intenset.write(Inte::SAMPLERDY::SET); /*SET SAMPLE READY*/
     }
 
-    fn disable_interrupts(&self) {
+    fn disable_samplerdy_interrupts(&self) {
         let regs = &*self.registers;
         regs.intenclr.write(Inte::SAMPLERDY::SET);
     }
@@ -265,7 +260,7 @@ impl Qdec {
     fn enable(&self) {
         let regs = &*self.registers;
         regs.enable.write(Task::ENABLE::SET);
-        set_sample_rate(); /*set sample rate to maximum sample rate*/
+        set_sample_rate();
         regs.tasks_start.write(Task::ENABLE::SET);
         debug!("Enabled!");
     }
@@ -280,9 +275,8 @@ impl Qdec {
         result
     }
 
-}    
+}
 
-//TODO: FIX SPACING!
 impl kernel::hil::qdec::QdecDriver for Qdec { 
     fn enable_interrupts (&self) {
        self.enable_interrupts();

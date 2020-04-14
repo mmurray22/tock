@@ -2,10 +2,6 @@
 use capsules::virtual_alarm::{MuxAlarm, VirtualMuxAlarm};
 use kernel::hil::time;
 use kernel::hil::time::{Alarm, Frequency};
-use kernel::{debug, static_init};
-use nrf52::qdec::Qdec;
-use kernel::hil::qdec::QdecDriver;
-//use nrf5x::pinmux;
 
 pub const TEST_DELAY_MS: u32 = 1000;
 

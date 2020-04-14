@@ -1,6 +1,6 @@
 //! Interface for a Qdec compatible chip
 //!
-//! This trait provides a stanfard interface for chips a 
+//! This trait provides a stanfard interface for chips with a 
 //! quadrature decoder. Any interface functions that
 //! a chip cannot implement can be ignored by the chip capsule 
 
@@ -16,7 +16,7 @@ pub trait QdecDriver {
   /// Enables the Qdec, returning error if Qdec does not exist
   fn enable (&self) -> ReturnCode;
 
-  /// Gets the accumulation value
+  /// Reads the accumulator value and resets it
   fn get_acc (&self) -> u32;
 }
 

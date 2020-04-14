@@ -1,7 +1,6 @@
 //! Shared setup for nrf52dk boards.
 
 #![no_std]
-#![allow(dead_code)]
 #[allow(unused_imports)]
 use kernel::{create_capability, debug, debug_gpio, debug_verbose, static_init};
 use capsules::virtual_alarm::VirtualMuxAlarm;
@@ -16,7 +15,6 @@ use nrf52::rtc::Rtc;
 use nrf52::uicr::Regulator0Output;
 
 use kernel::common::dynamic_deferred_call::{DynamicDeferredCall, DynamicDeferredCallClientState};
-//pub mod qdec_test;
 pub mod nrf52_components;
 use nrf52_components::ble::BLEComponent;
 use nrf52_components::ieee802154::Ieee802154Component;
@@ -107,7 +105,6 @@ pub struct Platform {
     // The nRF52dk does not have the flash chip on it, so we make this optional.
     nonvolatile_storage:
         Option<&'static capsules::nonvolatile_storage_driver::NonvolatileStorage<'static>>,
-    qdec: &'static capsules::qdec::QdecInterface<'static>,
     //_ => f(None),
 }
 
@@ -463,11 +460,6 @@ pub unsafe fn setup_board(
             board_kernel.create_grant(&memory_allocation_capability)
         )
     );
-    kernel::hil::qdec::QdecDriver::set_client(qdec_nrf52, qdec);
-    //let qdec_test = qdec_test::initialize_all(mux_alarm, qdec_nrf52);
-    //qdec_nrf52.set_client(qdec_test);
-    //debug!("Testing: Qdec Initialized!"); TODO DELETE DEBUG STATEMENTS
-    //END: QDEC INITIALIZATION
 
     let platform = Platform {
         button: button,
