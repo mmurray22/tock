@@ -283,8 +283,6 @@ impl kernel::hil::qdec::QdecDriver for Qdec {
     }
 
     fn enable_qdec (&self) -> ReturnCode {
-        //Maybe expose to HIL
-        //self.registers.sample_per.write(SampPer::SAMPLEPER::ms131);
         self.enable();
         self.set_sample_rate();
         self.is_enabled()
@@ -292,13 +290,13 @@ impl kernel::hil::qdec::QdecDriver for Qdec {
 
     fn set_sample_rate (&self) {
         self.registers.intenset.write(Inte::STOPPED::SET);
+        /// currently this driver always sets the sample rate to the highest possible value
         self.registers.sample_per.write(SampPer::SAMPLEPER::ms131);
         self.registers.intenclr.write(Inte::STOPPED::SET);
     }
 
     fn get_acc(&self) -> u32 {
         let regs = &*self.registers;
-        //self.enable_interrupts();
         regs.tasks_readclracc.write(Task::ENABLE::SET);
         regs.acc_read.read(Acc::ACC)
     }
