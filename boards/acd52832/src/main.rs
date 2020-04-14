@@ -5,8 +5,8 @@
 #![deny(missing_docs)]
 
 use capsules::virtual_alarm::VirtualMuxAlarm;
-use capsules::virtual_uart::MuxUart;
 use kernel::capabilities;
+use kernel::common::dynamic_deferred_call::{DynamicDeferredCall, DynamicDeferredCallClientState};
 use kernel::component::Component;
 use kernel::hil;
 use kernel::hil::entropy::Entropy32;
@@ -116,6 +116,14 @@ pub unsafe fn reset_handler() {
 
     let board_kernel = static_init!(kernel::Kernel, kernel::Kernel::new(&PROCESSES));
 
+    let dynamic_deferred_call_clients =
+        static_init!([DynamicDeferredCallClientState; 2], Default::default());
+    let dynamic_deferred_caller = static_init!(
+        DynamicDeferredCall,
+        DynamicDeferredCall::new(dynamic_deferred_call_clients)
+    );
+    DynamicDeferredCall::set_global_instance(dynamic_deferred_caller);
+
     // GPIOs
     let gpio_pins = static_init!(
         [&'static dyn kernel::hil::gpio::InterruptValuePin; 7],
@@ -181,60 +189,6 @@ pub unsafe fn reset_handler() {
         ]
     );
 
-    // Setup GPIO pins that correspond to buttons
-    let button_pins = static_init!(
-        [(
-            &'static dyn hil::gpio::InterruptValuePin,
-            capsules::button::GpioMode
-        ); 4],
-        [
-            // 13
-            (
-                static_init!(
-                    kernel::hil::gpio::InterruptValueWrapper,
-                    kernel::hil::gpio::InterruptValueWrapper::new(
-                        &nrf52832::gpio::PORT[BUTTON1_PIN]
-                    )
-                )
-                .finalize(),
-                capsules::button::GpioMode::LowWhenPressed
-            ),
-            // 14
-            (
-                static_init!(
-                    kernel::hil::gpio::InterruptValueWrapper,
-                    kernel::hil::gpio::InterruptValueWrapper::new(
-                        &nrf52832::gpio::PORT[BUTTON2_PIN]
-                    )
-                )
-                .finalize(),
-                capsules::button::GpioMode::LowWhenPressed
-            ),
-            // 15
-            (
-                static_init!(
-                    kernel::hil::gpio::InterruptValueWrapper,
-                    kernel::hil::gpio::InterruptValueWrapper::new(
-                        &nrf52832::gpio::PORT[BUTTON3_PIN]
-                    )
-                )
-                .finalize(),
-                capsules::button::GpioMode::LowWhenPressed
-            ),
-            // 16
-            (
-                static_init!(
-                    kernel::hil::gpio::InterruptValueWrapper,
-                    kernel::hil::gpio::InterruptValueWrapper::new(
-                        &nrf52832::gpio::PORT[BUTTON4_PIN]
-                    )
-                )
-                .finalize(),
-                capsules::button::GpioMode::LowWhenPressed
-            ),
-        ]
-    );
-
     // Make non-volatile memory writable and activate the reset button
     let uicr = nrf52832::uicr::Uicr::new();
     nrf52832::nvmc::NVMC.erase_uicr();
@@ -276,17 +230,34 @@ pub unsafe fn reset_handler() {
     //
     // Buttons
     //
-    let button = static_init!(
-        capsules::button::Button<'static>,
-        capsules::button::Button::new(
-            button_pins,
-            board_kernel.create_grant(&memory_allocation_capability)
-        )
+    let button = components::button::ButtonComponent::new(board_kernel).finalize(
+        components::button_component_helper!(
+            // 13
+            (
+                &nrf52832::gpio::PORT[BUTTON1_PIN],
+                capsules::button::GpioMode::LowWhenPressed,
+                hil::gpio::FloatingState::PullUp
+            ),
+            // 14
+            (
+                &nrf52832::gpio::PORT[BUTTON2_PIN],
+                capsules::button::GpioMode::LowWhenPressed,
+                hil::gpio::FloatingState::PullUp
+            ),
+            // 15
+            (
+                &nrf52832::gpio::PORT[BUTTON3_PIN],
+                capsules::button::GpioMode::LowWhenPressed,
+                hil::gpio::FloatingState::PullUp
+            ),
+            // 16
+            (
+                &nrf52832::gpio::PORT[BUTTON4_PIN],
+                capsules::button::GpioMode::LowWhenPressed,
+                hil::gpio::FloatingState::PullUp
+            )
+        ),
     );
-    for &(btn, _) in button_pins.iter() {
-        btn.set_floating_state(kernel::hil::gpio::FloatingState::PullUp);
-        btn.set_client(button);
-    }
 
     //
     // RTC for Timers
@@ -358,12 +329,8 @@ pub unsafe fn reset_handler() {
     //
 
     // Create a shared UART channel for the console and for kernel debug.
-    let uart_mux = static_init!(
-        MuxUart<'static>,
-        MuxUart::new(rtt, &mut capsules::virtual_uart::RX_BUF, 115200)
-    );
-    kernel::hil::uart::Transmit::set_transmit_client(rtt, uart_mux);
-    kernel::hil::uart::Receive::set_receive_client(rtt, uart_mux);
+    let uart_mux = components::console::UartMuxComponent::new(rtt, 115200, dynamic_deferred_caller)
+        .finalize(());
 
     // Setup the console.
     let console = components::console::ConsoleComponent::new(board_kernel, uart_mux).finalize(());
@@ -561,10 +528,7 @@ pub unsafe fn reset_handler() {
         ipc: kernel::ipc::IPC::new(board_kernel, &memory_allocation_capability),
     };
 
-    let chip = static_init!(
-        nrf52832::chip::NRF52,
-        nrf52832::chip::NRF52::new(&nrf52832::gpio::PORT)
-    );
+    let chip = static_init!(nrf52832::chip::Chip, nrf52832::chip::new());
 
     nrf52832::gpio::PORT[Pin::P0_31].make_output();
     nrf52832::gpio::PORT[Pin::P0_31].clear();

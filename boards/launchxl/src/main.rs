@@ -10,11 +10,11 @@ extern crate enum_primitive;
 #[allow(unused_imports)]
 use kernel::{create_capability, debug, debug_gpio, static_init};
 
-use capsules::virtual_uart::MuxUart;
 use cc26x2::aon;
 use cc26x2::prcm;
 use cc26x2::pwm;
 use kernel::capabilities;
+use kernel::common::dynamic_deferred_call::{DynamicDeferredCall, DynamicDeferredCallClientState};
 use kernel::component::Component;
 use kernel::hil;
 use kernel::hil::entropy::Entropy32;
@@ -162,6 +162,14 @@ pub unsafe fn reset_handler() {
 
     let board_kernel = static_init!(kernel::Kernel, kernel::Kernel::new(&PROCESSES));
 
+    let dynamic_deferred_call_clients =
+        static_init!([DynamicDeferredCallClientState; 2], Default::default());
+    let dynamic_deferred_caller = static_init!(
+        DynamicDeferredCall,
+        DynamicDeferredCall::new(dynamic_deferred_call_clients)
+    );
+    DynamicDeferredCall::set_global_instance(dynamic_deferred_caller);
+
     // Enable the GPIO clocks
     prcm::Clock::enable_gpio();
 
@@ -199,59 +207,29 @@ pub unsafe fn reset_handler() {
     );
 
     // BUTTONS
-    let button_pins = static_init!(
-        [(
-            &'static dyn gpio::InterruptValuePin,
-            capsules::button::GpioMode
-        ); 2],
-        [
+    let button = components::button::ButtonComponent::new(board_kernel).finalize(
+        components::button_component_helper!(
             (
-                static_init!(
-                    gpio::InterruptValueWrapper,
-                    gpio::InterruptValueWrapper::new(&cc26x2::gpio::PORT[pinmap.button1])
-                )
-                .finalize(),
-                capsules::button::GpioMode::LowWhenPressed
+                &cc26x2::gpio::PORT[pinmap.button1],
+                capsules::button::GpioMode::LowWhenPressed,
+                hil::gpio::FloatingState::PullUp
             ),
             (
-                static_init!(
-                    gpio::InterruptValueWrapper,
-                    gpio::InterruptValueWrapper::new(&cc26x2::gpio::PORT[pinmap.button2])
-                )
-                .finalize(),
-                capsules::button::GpioMode::LowWhenPressed
+                &cc26x2::gpio::PORT[pinmap.button2],
+                capsules::button::GpioMode::LowWhenPressed,
+                hil::gpio::FloatingState::PullUp
             )
-        ]
+        ),
     );
-
-    let button = static_init!(
-        capsules::button::Button<'static>,
-        capsules::button::Button::new(
-            button_pins,
-            board_kernel.create_grant(&memory_allocation_capability)
-        )
-    );
-
-    for (pin, _) in button_pins.iter() {
-        pin.set_client(button);
-        pin.set_floating_state(hil::gpio::FloatingState::PullUp);
-    }
 
     // UART
     cc26x2::uart::UART0.initialize();
-
-    // Create a shared UART channel for the console and for kernel debug.
-    let uart_mux = static_init!(
-        MuxUart<'static>,
-        MuxUart::new(
-            &cc26x2::uart::UART0,
-            &mut capsules::virtual_uart::RX_BUF,
-            115200
-        )
-    );
-    uart_mux.initialize();
-    hil::uart::Receive::set_receive_client(&cc26x2::uart::UART0, uart_mux);
-    hil::uart::Transmit::set_transmit_client(&cc26x2::uart::UART0, uart_mux);
+    let uart_mux = components::console::UartMuxComponent::new(
+        &cc26x2::uart::UART0,
+        115200,
+        dynamic_deferred_caller,
+    )
+    .finalize(());
 
     // Setup the console.
     let console = components::console::ConsoleComponent::new(board_kernel, uart_mux).finalize(());

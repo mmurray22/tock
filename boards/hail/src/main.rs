@@ -11,6 +11,7 @@ use capsules::virtual_alarm::VirtualMuxAlarm;
 use capsules::virtual_i2c::{I2CDevice, MuxI2C};
 use capsules::virtual_spi::{MuxSpiMaster, VirtualSpiMasterDevice};
 use kernel::capabilities;
+use kernel::common::dynamic_deferred_call::{DynamicDeferredCall, DynamicDeferredCallClientState};
 use kernel::component::Component;
 use kernel::hil;
 use kernel::hil::Controller;
@@ -203,12 +204,24 @@ pub unsafe fn reset_handler() {
 
     let chip = static_init!(sam4l::chip::Sam4l, sam4l::chip::Sam4l::new());
 
+    let dynamic_deferred_call_clients =
+        static_init!([DynamicDeferredCallClientState; 2], Default::default());
+    let dynamic_deferred_caller = static_init!(
+        DynamicDeferredCall,
+        DynamicDeferredCall::new(dynamic_deferred_call_clients)
+    );
+    DynamicDeferredCall::set_global_instance(dynamic_deferred_caller);
+
     // Initialize USART0 for Uart
     sam4l::usart::USART0.set_mode(sam4l::usart::UsartMode::Uart);
 
     // Create a shared UART channel for the console and for kernel debug.
-    let uart_mux =
-        components::console::UartMuxComponent::new(&sam4l::usart::USART0, 115200).finalize(());
+    let uart_mux = components::console::UartMuxComponent::new(
+        &sam4l::usart::USART0,
+        115200,
+        dynamic_deferred_caller,
+    )
+    .finalize(());
     uart_mux.initialize();
 
     hil::uart::Transmit::set_transmit_client(&sam4l::usart::USART0, uart_mux);
@@ -302,7 +315,8 @@ pub unsafe fn reset_handler() {
     let button = components::button::ButtonComponent::new(board_kernel).finalize(
         components::button_component_helper!((
             &sam4l::gpio::PA[16],
-            capsules::button::GpioMode::LowWhenPressed
+            capsules::button::GpioMode::LowWhenPressed,
+            kernel::hil::gpio::FloatingState::PullNone
         )),
     );
 
@@ -322,6 +336,7 @@ pub unsafe fn reset_handler() {
         capsules::adc::Adc<'static, sam4l::adc::Adc>,
         capsules::adc::Adc::new(
             &sam4l::adc::ADC0,
+            board_kernel.create_grant(&memory_allocation_capability),
             adc_channels,
             &mut capsules::adc::ADC_BUFFER1,
             &mut capsules::adc::ADC_BUFFER2,
@@ -363,8 +378,6 @@ pub unsafe fn reset_handler() {
     // unsafe impl capabilities::ProcessManagementCapability for ProcessMgmtCap {}
     // let debug_process_restart = static_init!(
     //     capsules::debug_process_restart::DebugProcessRestart<
-    //         'static,
-    //         sam4l::gpio::GPIOPin,
     //         ProcessMgmtCap,
     //     >,
     //     capsules::debug_process_restart::DebugProcessRestart::new(

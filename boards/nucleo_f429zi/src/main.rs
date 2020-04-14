@@ -8,10 +8,10 @@
 #![deny(missing_docs)]
 
 use capsules::virtual_alarm::{MuxAlarm, VirtualMuxAlarm};
-use capsules::virtual_uart::MuxUart;
 use kernel::capabilities;
+use kernel::common::dynamic_deferred_call::{DynamicDeferredCall, DynamicDeferredCallClientState};
 use kernel::component::Component;
-use kernel::hil::{self, time::Alarm};
+use kernel::hil::time::Alarm;
 use kernel::Platform;
 use kernel::{create_capability, debug, static_init};
 
@@ -43,7 +43,6 @@ static APP_HACK: u8 = 0;
 #[link_section = ".stack_buffer"]
 pub static mut STACK_MEMORY: [u8; 0x1000] = [0; 0x1000];
 
-const NUM_BUTTONS: usize = 1;
 const NUM_LEDS: usize = 1;
 
 /// A structure representing this platform that holds references to all
@@ -183,6 +182,14 @@ pub unsafe fn reset_handler() {
 
     let board_kernel = static_init!(kernel::Kernel, kernel::Kernel::new(&PROCESSES));
 
+    let dynamic_deferred_call_clients =
+        static_init!([DynamicDeferredCallClientState; 2], Default::default());
+    let dynamic_deferred_caller = static_init!(
+        DynamicDeferredCall,
+        DynamicDeferredCall::new(dynamic_deferred_call_clients)
+    );
+    DynamicDeferredCall::set_global_instance(dynamic_deferred_caller);
+
     let chip = static_init!(
         stm32f4xx::chip::Stm32f4xx,
         stm32f4xx::chip::Stm32f4xx::new()
@@ -192,21 +199,14 @@ pub unsafe fn reset_handler() {
 
     // Create a shared UART channel for kernel debug.
     stm32f4xx::usart::USART3.enable_clock();
-    let mux_uart = static_init!(
-        MuxUart<'static>,
-        MuxUart::new(
-            &stm32f4xx::usart::USART3,
-            &mut capsules::virtual_uart::RX_BUF,
-            115200
-        )
-    );
-    mux_uart.initialize();
-    // `mux_uart.initialize()` configures the underlying USART, so we need to
-    // tell `send_byte()` not to configure the USART again.
-    io::WRITER.set_initialized();
+    let uart_mux = components::console::UartMuxComponent::new(
+        &stm32f4xx::usart::USART3,
+        115200,
+        dynamic_deferred_caller,
+    )
+    .finalize(());
 
-    hil::uart::Transmit::set_transmit_client(&stm32f4xx::usart::USART3, mux_uart);
-    hil::uart::Receive::set_receive_client(&stm32f4xx::usart::USART3, mux_uart);
+    io::WRITER.set_initialized();
 
     // Create capabilities that the board needs to call certain protected kernel
     // functions.
@@ -216,9 +216,9 @@ pub unsafe fn reset_handler() {
         create_capability!(capabilities::ProcessManagementCapability);
 
     // Setup the console.
-    let console = components::console::ConsoleComponent::new(board_kernel, mux_uart).finalize(());
+    let console = components::console::ConsoleComponent::new(board_kernel, uart_mux).finalize(());
     // Create the debugger object that handles calls to `debug!()`.
-    components::debug_writer::DebugWriterComponent::new(mux_uart).finalize(());
+    components::debug_writer::DebugWriterComponent::new(uart_mux).finalize(());
 
     // // Setup the process inspection console
     // let process_console_uart = static_init!(UartDevice, UartDevice::new(mux_uart, true));
@@ -259,36 +259,16 @@ pub unsafe fn reset_handler() {
     );
 
     // BUTTONs
-    let button_pins = static_init!(
-        [(
-            &'static dyn kernel::hil::gpio::InterruptValuePin,
-            capsules::button::GpioMode
-        ); NUM_BUTTONS],
-        [(
-            static_init!(
-                kernel::hil::gpio::InterruptValueWrapper,
-                kernel::hil::gpio::InterruptValueWrapper::new(
-                    stm32f4xx::gpio::PinId::PC13.get_pin().as_ref().unwrap()
-                )
-            )
-            .finalize(),
-            capsules::button::GpioMode::LowWhenPressed
-        ),]
+    let button = components::button::ButtonComponent::new(board_kernel).finalize(
+        components::button_component_helper!((
+            stm32f4xx::gpio::PinId::PC13.get_pin().as_ref().unwrap(),
+            capsules::button::GpioMode::LowWhenPressed,
+            kernel::hil::gpio::FloatingState::PullNone
+        )),
     );
-
-    let button = static_init!(
-        capsules::button::Button<'static>,
-        capsules::button::Button::new(
-            button_pins,
-            board_kernel.create_grant(&memory_allocation_capability)
-        )
-    );
-
-    for (pin, _) in button_pins.iter() {
-        pin.set_client(button);
-    }
 
     // ALARM
+
     let mux_alarm = static_init!(
         MuxAlarm<'static, stm32f4xx::tim2::Tim2>,
         MuxAlarm::new(&stm32f4xx::tim2::TIM2)
