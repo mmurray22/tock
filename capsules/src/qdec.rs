@@ -17,8 +17,6 @@
 
 use crate::driver;
 use kernel::hil;
-use kernel::debug;
-use core::cell::Cell;
 use kernel::{AppId, Callback, ReturnCode, Driver, Grant};
 
 pub const DRIVER_NUM: usize = driver::NUM::Qdec as usize;
@@ -68,7 +66,8 @@ impl hil::qdec::QdecClient for QdecInterface<'a> {
             cntr.enter(|app, _| {
                 if app.subscribed {
                     app.subscribed = false;
-                    app.callback.map(|mut cb| cb.schedule(self.driver.get_acc(), 0,0));                }
+                    //TODO: FIGURE OUT self.driver.get_acc() ->u32
+                    app.callback.map(|mut cb| cb.schedule(self.driver.get_acc() as usize,0,0));                }
             });
         }
     }
@@ -89,18 +88,14 @@ impl Driver for QdecInterface<'a> {
     }
 
     /// Command switch statement for various essential processes
-    fn command (&self, command_num: usize, _: usize, _: usize, appid: AppId) -> ReturnCode {
+    fn command (&self, command_num: usize, _: usize, _: usize, _app_id: AppId) -> ReturnCode {
         match command_num {
-            /// dummy value
             0 => ReturnCode::SUCCESS,
-            /// enable qdec
-            1 => self.driver.enable(),
-            /// get qdec acc
+            1 => self.driver.enable_qdec(),
             2 =>
               ReturnCode::SuccessWithValue {
-                value: self.get_acc() as usize,
+                value: self.driver.get_acc() as usize,
               },
-            /// default
             _ => ReturnCode::ENOSUPPORT
         }
     }

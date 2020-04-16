@@ -167,8 +167,8 @@ const QDEC_BASE: StaticRef<QdecRegisters> =
 pub static mut QDEC: Qdec = Qdec::new();
 
 enum QdecState {
-    SAMPLE_RATE_STOP,
-    START,
+    SampleRateStop,
+    Start,
 }
 
 /// Qdec type declaration: gives the Qdec instance registers and a client
@@ -176,7 +176,6 @@ pub struct Qdec {
     registers: StaticRef<QdecRegisters>,
     client: OptionalCell<&'static dyn kernel::hil::qdec::QdecClient>,
     state: QdecState,
-    sample_rate: u32,
 }
 
 /// Qdec impl: provides the Qdec type with vital functionality including:
@@ -185,7 +184,7 @@ impl Qdec {
         let qdec = Qdec {
             registers: QDEC_BASE,
             client: OptionalCell::empty(),
-            state: QdecState::START,
+            state: QdecState::Start,
         };
         qdec
     }
@@ -209,7 +208,7 @@ impl Qdec {
     /// of the interrupt register bits are set. If it
     /// is, then put it in the client's bitmask
     pub fn handle_interrupt(&self) {
-        self.disable_interrupts();
+        self.disable_samplerdy_interrupts();
         let regs = &*self.registers;
         self.client.map(|client| {
             let mut val = 0;
@@ -221,24 +220,24 @@ impl Qdec {
                     self.registers.events_arr[i].write(Event::READY::CLEAR);
                     // Disable corresponding interrupt
                     let interrupt_bit = match i {
-                        0 => Inte::SAMPLERDY::SET,
+                        0 => Inte::SAMPLERDY,
                         //1 => Inte::REPORTRDY::SET,
                         //2 => Inte::ACCOF::SET,
                         //3 => Inte::DBLRDY::SET,
-                        4 => Inte::STOPPED::SET,
+                        4 => Inte::STOPPED,
                         _ => panic!("Unsupported interrupt value!"),
                     };
-                    if interrupt_bit == 0 {
+                    if interrupt_bit == Inte::SAMPLERDY {
                         client.sample_ready (); 
-                    } else if interrupt_bit == 4 && self.qdec.state == SAMPLE_RATE_STOP {
-                        regs.sample_per.write(SampPer::SAMPLEPER.val(5));
-                        regs.task_start.write(Task::ENABLE::SET);
-                        self.qdec.state = START;
+                    } else if interrupt_bit == Inte::STOPPED /*&& self.state == QdecState::SampleRateStop*/ {
+                        self.registers.sample_per.write(SampPer::SAMPLEPER.val(5));
+                        self.registers.tasks_start.write(Task::ENABLE::SET);
+                        self.state = &QdecState::Start;
                     }
                 }
             }
         });
-        self.enable_interrupts();
+        self.enable_samplerdy_interrupts();
     }
 
     fn enable_samplerdy_interrupts(&self) {
@@ -251,16 +250,15 @@ impl Qdec {
         regs.intenclr.write(Inte::SAMPLERDY::SET);
     }
 
-    fn set_sample_rate (&self) { 
-        regs.task_stop.write(Task::ENABLE::SET);
-        self.qdec.state = SAMPLE_RATE_STOP;
-        regs.tasks_stop.write(Task::ENABLE::SET); /*induce stop*/
-    }
-
     fn enable(&self) {
         let regs = &*self.registers;
         regs.enable.write(Task::ENABLE::SET);
-        set_sample_rate();
+
+        //set_sample_rate
+        regs.tasks_stop.write(Task::ENABLE::SET);
+        self.state = &QdecState::SampleRateStop;
+        regs.tasks_stop.write(Task::ENABLE::SET); /*induce stop*/
+        
         regs.tasks_start.write(Task::ENABLE::SET);
         debug!("Enabled!");
     }
@@ -278,21 +276,14 @@ impl Qdec {
 }
 
 impl kernel::hil::qdec::QdecDriver for Qdec { 
+
     fn enable_interrupts (&self) {
-       self.enable_interrupts();
+       self.enable_samplerdy_interrupts();
     }
 
     fn enable_qdec (&self) -> ReturnCode {
         self.enable();
-        self.set_sample_rate();
         self.is_enabled()
-    }
-
-    fn set_sample_rate (&self) {
-        self.registers.intenset.write(Inte::STOPPED::SET);
-        /// currently this driver always sets the sample rate to the highest possible value
-        self.registers.sample_per.write(SampPer::SAMPLEPER::ms131);
-        self.registers.intenclr.write(Inte::STOPPED::SET);
     }
 
     fn get_acc(&self) -> u32 {

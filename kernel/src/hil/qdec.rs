@@ -14,7 +14,7 @@ pub trait QdecDriver {
   fn enable_interrupts (&self);
   
   /// Enables the Qdec, returning error if Qdec does not exist
-  fn enable (&self) -> ReturnCode;
+  fn enable_qdec (&self) -> ReturnCode;
 
   /// Reads the accumulator value and resets it
   fn get_acc (&self) -> u32;
