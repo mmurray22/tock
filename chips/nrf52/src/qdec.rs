@@ -166,16 +166,16 @@ const QDEC_BASE: StaticRef<QdecRegisters> =
 
 pub static mut QDEC: Qdec = Qdec::new();
 
-enum QdecState {
-    SampleRateStop,
-    Start,
-}
+/*enum QdecState {
+    SampleRateStop, //1
+    Start, //0
+}*/
 
 /// Qdec type declaration: gives the Qdec instance registers and a client
 pub struct Qdec {
     registers: StaticRef<QdecRegisters>,
     client: OptionalCell<&'static dyn kernel::hil::qdec::QdecClient>,
-    state: QdecState,
+    state: usize,
 }
 
 /// Qdec impl: provides the Qdec type with vital functionality including:
@@ -184,7 +184,7 @@ impl Qdec {
         let qdec = Qdec {
             registers: QDEC_BASE,
             client: OptionalCell::empty(),
-            state: QdecState::Start,
+            state: 0, //Start
         };
         qdec
     }
@@ -219,21 +219,19 @@ impl Qdec {
                     val = val | 1 << i;
                     self.registers.events_arr[i].write(Event::READY::CLEAR);
                     // Disable corresponding interrupt
-                    let interrupt_bit = match i {
-                        0 => Inte::SAMPLERDY,
-                        //1 => Inte::REPORTRDY::SET,
-                        //2 => Inte::ACCOF::SET,
-                        //3 => Inte::DBLRDY::SET,
-                        4 => Inte::STOPPED,
+                    let _interrupt_bit = match i {
+                        0 => {
+                            client.sample_ready ();
+                        },
+                        4 => {
+                            if self.state == 1 {
+                                    self.registers.sample_per.write(SampPer::SAMPLEPER.val(5));
+                                    self.registers.tasks_start.write(Task::ENABLE::SET);
+                                    //self.state = 0;
+                            }
+                        },
                         _ => panic!("Unsupported interrupt value!"),
                     };
-                    if interrupt_bit == Inte::SAMPLERDY {
-                        client.sample_ready (); 
-                    } else if interrupt_bit == Inte::STOPPED /*&& self.state == QdecState::SampleRateStop*/ {
-                        self.registers.sample_per.write(SampPer::SAMPLEPER.val(5));
-                        self.registers.tasks_start.write(Task::ENABLE::SET);
-                        self.state = &QdecState::Start;
-                    }
                 }
             }
         });
@@ -256,7 +254,7 @@ impl Qdec {
 
         //set_sample_rate
         regs.tasks_stop.write(Task::ENABLE::SET);
-        self.state = &QdecState::SampleRateStop;
+        //self.state = 1; //SampleRateStop
         regs.tasks_stop.write(Task::ENABLE::SET); /*induce stop*/
         
         regs.tasks_start.write(Task::ENABLE::SET);
