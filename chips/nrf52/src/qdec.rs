@@ -166,11 +166,6 @@ const QDEC_BASE: StaticRef<QdecRegisters> =
 
 pub static mut QDEC: Qdec = Qdec::new();
 
-/*enum QdecState {
-    SampleRateStop, //1
-    Start, //0
-}*/
-
 /// Qdec type declaration: gives the Qdec instance registers and a client
 pub struct Qdec {
     registers: StaticRef<QdecRegisters>,
@@ -254,7 +249,6 @@ impl Qdec {
 
         //set_sample_rate
         regs.tasks_stop.write(Task::ENABLE::SET);
-        //self.state = 1; //SampleRateStop
         regs.tasks_stop.write(Task::ENABLE::SET); /*induce stop*/
         
         regs.tasks_start.write(Task::ENABLE::SET);
@@ -281,6 +275,10 @@ impl kernel::hil::qdec::QdecDriver for Qdec {
 
     fn enable_qdec (&self) -> ReturnCode {
         self.enable();
+        self.is_enabled()
+    }
+
+    fn enabled (&self) -> ReturnCode {
         self.is_enabled()
     }
 

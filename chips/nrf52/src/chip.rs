@@ -4,7 +4,7 @@ use crate::nvmc;
 // use crate::power;
 // use crate::spi;
 // use crate::uart;
-use crate::qdec;
+// use crate::qdec;
 use cortexm4::{self, nvic};
 use kernel::common::deferred_call;
 use kernel::debug;
