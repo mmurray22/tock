@@ -11,7 +11,7 @@ pub trait QdecDriver {
   fn set_client(&self, client: &'static dyn QdecClient);  
  
   /// Enables the SAMPLERDY interrupt
-  fn enable_interrupts (&self);
+  fn enable_interrupts (&self) -> ReturnCode;
   
   /// Enables the Qdec, returning error if Qdec does not exist
   fn enable_qdec (&self) -> ReturnCode;
@@ -24,6 +24,8 @@ pub trait QdecDriver {
 }
 
 pub trait QdecClient {
-    /// Callback function
+    /// Callback function 1
     fn sample_ready (&self);
+    /// Callback function 2
+    fn overflow (&self);
 }

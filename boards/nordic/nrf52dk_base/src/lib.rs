@@ -485,6 +485,5 @@ pub unsafe fn setup_board<I: nrf52::interrupt_service::InterruptService>(
         app_fault_response,
         &process_management_capability,
     );
-    debug!("HELLO PLEASE PRINT THIS!");
     board_kernel.kernel_loop(&platform, chip, Some(&platform.ipc), &main_loop_capability);
 }

@@ -218,6 +218,9 @@ impl Qdec {
                         0 => {
                             client.sample_ready ();
                         },
+                        2 => {
+                            client.overflow ();
+                        },
                         4 => {
                             if self.state == 1 {
                                     self.registers.sample_per.write(SampPer::SAMPLEPER.val(5));
@@ -236,11 +239,13 @@ impl Qdec {
     fn enable_samplerdy_interrupts(&self) {
         let regs = &*self.registers;
         regs.intenset.write(Inte::SAMPLERDY::SET); /*SET SAMPLE READY*/
+        regs.intenset.write(Inte::ACCOF::SET); /*SET ACCOF READY*/
     }
 
     fn disable_samplerdy_interrupts(&self) {
         let regs = &*self.registers;
         regs.intenclr.write(Inte::SAMPLERDY::SET);
+        regs.intenclr.write(Inte::ACCOF::SET);
     }
 
     fn enable(&self) {
@@ -248,11 +253,8 @@ impl Qdec {
         regs.enable.write(Task::ENABLE::SET);
 
         //set_sample_rate
-        regs.tasks_stop.write(Task::ENABLE::SET);
-        regs.tasks_stop.write(Task::ENABLE::SET); /*induce stop*/
-        
-        regs.tasks_start.write(Task::ENABLE::SET);
-        debug!("Enabled!");
+        //regs.tasks_stop.write(Task::ENABLE::SET); /*induce stop*/
+        //regs.tasks_start.write(Task::ENABLE::SET);
     }
 
     fn is_enabled(&self) -> ReturnCode {
@@ -269,12 +271,16 @@ impl Qdec {
 
 impl kernel::hil::qdec::QdecDriver for Qdec { 
 
-    fn enable_interrupts (&self) {
+    fn enable_interrupts (&self) -> ReturnCode {
        self.enable_samplerdy_interrupts();
+       debug!("HALLO");
+       ReturnCode::SUCCESS
     }
 
     fn enable_qdec (&self) -> ReturnCode {
-        self.enable();
+        if self.is_enabled() != ReturnCode::SUCCESS {
+            self.enable()
+        }
         self.is_enabled()
     }
 

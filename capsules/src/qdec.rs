@@ -67,7 +67,21 @@ impl hil::qdec::QdecClient for QdecInterface<'a> {
                 if app.subscribed {
                     app.subscribed = false;
                     //TODO: FIGURE OUT self.driver.get_acc() ->u32
-                    app.callback.map(|mut cb| cb.schedule(self.driver.get_acc() as usize,0,0));                }
+                    app.callback.map(|mut cb| cb.schedule(self.driver.get_acc() as usize,0,0));                
+                }
+            });
+        }
+    }
+
+    ///
+    fn overflow (&self) {
+        for cntr in self.apps.iter() {
+            cntr.enter(|app, _| {
+                if app.subscribed {
+                    app.subscribed = false;
+                    //TODO: FIGURE OUT self.driver.get_acc() ->u32
+                    app.callback.map(|mut cb| cb.schedule(self.driver.get_acc() as usize,0,0));                
+                }
             });
         }
     }
@@ -92,7 +106,9 @@ impl Driver for QdecInterface<'a> {
         match command_num {
             0 => ReturnCode::SUCCESS,
             1 => self.driver.enable_qdec(),
-            2 =>
+            2 => self.driver.enabled(),
+            3 => ReturnCode::SUCCESS,//self.driver.enable_interrupts(),
+            4 =>
               ReturnCode::SuccessWithValue {
                 value: self.driver.get_acc() as usize,
               },
