@@ -216,6 +216,7 @@ impl Qdec {
                     // Disable corresponding interrupt
                     let _interrupt_bit = match i {
                         0 => {
+                            debug!("Interrupt handler!");
                             client.sample_ready ();
                         },
                         2 => {

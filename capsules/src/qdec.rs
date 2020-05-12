@@ -17,7 +17,7 @@
 
 use crate::driver;
 use kernel::hil;
-use kernel::{AppId, Callback, ReturnCode, Driver, Grant};
+use kernel::{AppId, Callback, ReturnCode, Driver, Grant, debug};
 
 pub const DRIVER_NUM: usize = driver::NUM::Qdec as usize;
 
@@ -40,6 +40,7 @@ impl QdecInterface<'a> {
         driver: &'a dyn  hil::qdec::QdecDriver,
         grant: Grant<App>,
     ) -> QdecInterface<'a> {
+        driver.enable_interrupts();
         QdecInterface {
             driver: driver,
             apps: grant,
@@ -62,6 +63,7 @@ impl hil::qdec::QdecClient for QdecInterface<'a> {
     /// Goes through all the apps and if the app is
     /// subscribed then it sends back the acc value
     fn sample_ready (&self) {
+        debug!("HELLO");
         for cntr in self.apps.iter() {
             cntr.enter(|app, _| {
                 if app.subscribed {

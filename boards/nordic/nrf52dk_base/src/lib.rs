@@ -449,7 +449,7 @@ pub unsafe fn setup_board<I: nrf52::interrupt_service::InterruptService>(
             board_kernel.create_grant(&memory_allocation_capability)
         )
     );
-
+   
     let platform = Platform {
         button: button,
         ble_radio: ble_radio,
