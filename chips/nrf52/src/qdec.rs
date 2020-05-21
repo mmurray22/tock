@@ -203,6 +203,7 @@ impl Qdec {
     /// of the interrupt register bits are set. If it
     /// is, then put it in the client's bitmask
     pub fn handle_interrupt(&self) {
+        debug!("Entering Interrupt Handler!");
         self.disable_samplerdy_interrupts();
         let regs = &*self.registers;
         self.client.map(|client| {
@@ -220,7 +221,8 @@ impl Qdec {
                             client.sample_ready ();
                         },
                         2 => {
-                            client.overflow ();
+                            //client.overflow ();
+                            debug!("Overflow!");
                         },
                         4 => {
                             if self.state == 1 {
@@ -239,8 +241,14 @@ impl Qdec {
 
     fn enable_samplerdy_interrupts(&self) {
         let regs = &*self.registers;
-        regs.intenset.write(Inte::SAMPLERDY::SET); /*SET SAMPLE READY*/
-        regs.intenset.write(Inte::ACCOF::SET); /*SET ACCOF READY*/
+        regs.intenset.write(Inte::SAMPLERDY::SET);
+        regs.intenset.write(Inte::REPORTRDY::SET);
+        regs.intenset.write(Inte::ACCOF::SET);
+        regs.intenset.write(Inte::DBLRDY::SET);
+        regs.intenset.write(Inte::STOPPED::SET);
+
+//        regs.intenset.write(Inte::SAMPLERDY::SET); /*SET SAMPLE READY*/
+//        regs.intenset.write(Inte::ACCOF::SET); /*SET ACCOF READY*/
     }
 
     fn disable_samplerdy_interrupts(&self) {
@@ -274,13 +282,13 @@ impl kernel::hil::qdec::QdecDriver for Qdec {
 
     fn enable_interrupts (&self) -> ReturnCode {
        self.enable_samplerdy_interrupts();
-       debug!("HALLO");
        ReturnCode::SUCCESS
     }
 
     fn enable_qdec (&self) -> ReturnCode {
         if self.is_enabled() != ReturnCode::SUCCESS {
-            self.enable()
+            debug!("Enabled!");
+            self.enable();
         }
         self.is_enabled()
     }
@@ -292,7 +300,9 @@ impl kernel::hil::qdec::QdecDriver for Qdec {
     fn get_acc(&self) -> u32 {
         let regs = &*self.registers;
         regs.tasks_readclracc.write(Task::ENABLE::SET);
-        regs.acc_read.read(Acc::ACC)
+        let val = regs.acc_read.read(Acc::ACC);
+        debug!("{}", val);
+        val
     }
     
     fn set_client(&self, client: &'static dyn kernel::hil::qdec::QdecClient) {

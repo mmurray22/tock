@@ -26,6 +26,6 @@ pub trait QdecDriver {
 pub trait QdecClient {
     /// Callback function 1
     fn sample_ready (&self);
-    /// Callback function 2
-    fn overflow (&self);
+    // Callback function 2
+    //fn overflow (&self);
 }
