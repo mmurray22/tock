@@ -6,6 +6,7 @@ use crate::ieee802154_radio;
 use crate::power;
 use crate::spi;
 use crate::uart;
+use crate::qdec;
 use kernel::debug;
 use nrf5x::peripheral_interrupts;
 
@@ -123,6 +124,7 @@ impl InterruptService for Nrf52InterruptService {
             }
             peripheral_interrupts::SPIM2_SPIS2_SPI2 => spi::SPIM2.handle_interrupt(),
             peripheral_interrupts::ADC => adc::ADC.handle_interrupt(),
+            peripheral_interrupts::QDEC => qdec::QDEC.handle_interrupt(),
             _ => return false,
         }
         true

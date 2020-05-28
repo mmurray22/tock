@@ -241,14 +241,14 @@ impl Qdec {
 
     fn enable_samplerdy_interrupts(&self) {
         let regs = &*self.registers;
-        regs.intenset.write(Inte::SAMPLERDY::SET);
+        /*
         regs.intenset.write(Inte::REPORTRDY::SET);
-        regs.intenset.write(Inte::ACCOF::SET);
         regs.intenset.write(Inte::DBLRDY::SET);
         regs.intenset.write(Inte::STOPPED::SET);
+        */
 
-//        regs.intenset.write(Inte::SAMPLERDY::SET); /*SET SAMPLE READY*/
-//        regs.intenset.write(Inte::ACCOF::SET); /*SET ACCOF READY*/
+        regs.intenset.write(Inte::SAMPLERDY::SET); /*SET SAMPLE READY*/
+        regs.intenset.write(Inte::ACCOF::SET); /*SET ACCOF READY*/
     }
 
     fn disable_samplerdy_interrupts(&self) {
@@ -263,7 +263,7 @@ impl Qdec {
 
         //set_sample_rate
         //regs.tasks_stop.write(Task::ENABLE::SET); /*induce stop*/
-        //regs.tasks_start.write(Task::ENABLE::SET);
+        regs.tasks_start.write(Task::ENABLE::SET);
     }
 
     fn is_enabled(&self) -> ReturnCode {
@@ -282,6 +282,7 @@ impl kernel::hil::qdec::QdecDriver for Qdec {
 
     fn enable_interrupts (&self) -> ReturnCode {
        self.enable_samplerdy_interrupts();
+       debug!("SUCCESS!");
        ReturnCode::SUCCESS
     }
 

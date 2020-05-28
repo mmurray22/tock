@@ -111,7 +111,7 @@ pub struct Platform {
         'static,
         capsules::virtual_alarm::VirtualMuxAlarm<'static, nrf52::rtc::Rtc<'static>>,
     >,
-    //qdec: &'static capsules::qdec::QdecInterface<'static>,
+    qdec: &'static capsules::qdec::QdecInterface<'static>,
     // The nRF52dk does not have the flash chip on it, so we make this optional.
     nonvolatile_storage:
         Option<&'static capsules::nonvolatile_storage_driver::NonvolatileStorage<'static>>,
@@ -130,7 +130,7 @@ impl kernel::Platform for Platform {
             capsules::led::DRIVER_NUM => f(Some(self.led)),
             capsules::button::DRIVER_NUM => f(Some(self.button)),
             capsules::rng::DRIVER_NUM => f(Some(self.rng)),
-            //capsules::qdec::DRIVER_NUM => f(Some(self.qdec)),
+            capsules::qdec::DRIVER_NUM => f(Some(self.qdec)),
             capsules::ble_advertising_driver::DRIVER_NUM => f(Some(self.ble_radio)),
             capsules::ieee802154::DRIVER_NUM => match self.ieee802154_radio {
                 Some(radio) => f(Some(radio)),
@@ -442,15 +442,15 @@ pub unsafe fn setup_board<I: nrf52::interrupt_service::InterruptService>(
             nrf52::pinmux::Pinmux::new(qdec_pins.pin_a as u32),
             nrf52::pinmux::Pinmux::new(qdec_pins.pin_b as u32),
         );
-    let qdec_test = qdec_test::initialize_all(mux_alarm, qdec_nrf52);
-    /*let qdec = static_init!(
+    //let qdec_test = qdec_test::initialize_all(mux_alarm, qdec_nrf52);
+    let qdec = static_init!(
         capsules::qdec::QdecInterface<'static>,
         capsules::qdec::QdecInterface::new(
             qdec_nrf52,
             board_kernel.create_grant(&memory_allocation_capability)
         )
-    );*/
-    //kernel::hil::qdec::QdecDriver::set_client(&nrf52::qdec::QDEC, qdec);
+    );
+    kernel::hil::qdec::QdecDriver::set_client(&nrf52::qdec::QDEC, qdec);
 
     let platform = Platform {
         button: button,
@@ -465,15 +465,14 @@ pub unsafe fn setup_board<I: nrf52::interrupt_service::InterruptService>(
         alarm: alarm,
         analog_comparator: analog_comparator,
         nonvolatile_storage: nonvolatile_storage,
-        //qdec: qdec,
+        qdec: qdec,
         ipc: kernel::ipc::IPC::new(board_kernel, &memory_allocation_capability),
     };
 
     platform.pconsole.start();
     debug!("Initialization complete. Entering main loop\r");
     debug!("Start of QDEC Janky Test 1");
-    debug!("Accumulation value: {}", kernel::hil::qdec::QdecDriver::get_acc(&nrf52::qdec::QDEC));
-    qdec_test.start();
+    //qdec_test.start();
     debug!("End of QDEC Janky Test 1");
     debug!("{}", &nrf52::ficr::FICR_INSTANCE);
 

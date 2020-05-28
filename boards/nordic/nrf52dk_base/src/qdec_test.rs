@@ -39,9 +39,9 @@ pub unsafe fn initialize_all(
 impl<'a, A: time::Alarm<'a>> QdecTest<'a, A> {
     pub fn start(&self) {
         self.qdec.enable_qdec();
-        debug!("Is enabled?");
+        //debug!("Is enabled?");
         self.qdec.enable_interrupts();
-        debug!("Is interruptable?");
+        //debug!("Is interruptable?");
         self.schedule_next();
     }
 
