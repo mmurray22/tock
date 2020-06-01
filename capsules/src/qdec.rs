@@ -61,11 +61,11 @@ impl hil::qdec::QdecClient for QdecInterface<'a> {
     /// Goes through all the apps and if the app is
     /// subscribed then it sends back the acc value
     fn sample_ready (&self) {
-        debug!("Client");
+        debug!("Client Ready!");
         for cntr in self.apps.iter() {
             cntr.enter(|app, _| {
                 if app.subscribed {
-                    app.subscribed = false;
+                    //app.subscribed = false;
                     app.callback.map(|mut cb| cb.schedule(self.driver.get_acc() as usize,0,0));                
                 }
             });

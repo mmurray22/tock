@@ -15,7 +15,7 @@ use kernel::hil::gpio::{Configure, FloatingState};
 use nrf52::gpio::Pin;
 use nrf52::rtc::Rtc;
 use nrf52::uicr::Regulator0Output;
-
+use kernel::hil::qdec::QdecDriver; //TODO is this temporary?
 //use kernel::common::dynamic_deferred_call::{DynamicDeferredCall, DynamicDeferredCallClientState};
 pub mod qdec_test;
 pub mod nrf52_components;
@@ -442,6 +442,7 @@ pub unsafe fn setup_board<I: nrf52::interrupt_service::InterruptService>(
             nrf52::pinmux::Pinmux::new(qdec_pins.pin_a as u32),
             nrf52::pinmux::Pinmux::new(qdec_pins.pin_b as u32),
         );
+    //qdec_nrf52.enable_interrupts();
     //let qdec_test = qdec_test::initialize_all(mux_alarm, qdec_nrf52);
     let qdec = static_init!(
         capsules::qdec::QdecInterface<'static>,
