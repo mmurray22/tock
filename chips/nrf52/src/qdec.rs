@@ -8,9 +8,9 @@ use kernel::common::cells::OptionalCell;
 use kernel::common::registers::{
     register_bitfields, register_structs, ReadOnly, ReadWrite, WriteOnly,
 };
-use kernel::ReturnCode;
 use kernel::common::StaticRef;
 use kernel::debug;
+use kernel::ReturnCode;
 use nrf5x::pinmux;
 // In this section I declare a struct called QdecRegisters, which contains all the
 // relevant registers as outlined in the Nordic 5x specification of the Qdec.
@@ -73,7 +73,7 @@ register_structs! {
 }
 
 // In this section, I initialize all the bitfields associated with the type
-// of register assigned to each member of the struct above. 
+// of register assigned to each member of the struct above.
 register_bitfields![u32,
     Task [
         ENABLE 0
@@ -186,7 +186,7 @@ impl Qdec {
 
     /// sets pins_a and pins_b to be the output pins for whatever the encoding device is  
     pub fn set_pins(&self, pin_a: pinmux::Pinmux, pin_b: pinmux::Pinmux) {
-         let regs = self.registers;
+        let regs = self.registers;
         regs.psel_a.write(
             PinSelect::Pin.val(pin_a.into()) + PinSelect::Port.val(0) + PinSelect::Connect.val(0),
         );
@@ -202,42 +202,39 @@ impl Qdec {
     /// When an interrupt occurs, check to see if any
     /// of the interrupt register bits are set. If it
     /// is, then put it in the client's bitmask
-    pub fn handle_interrupt(&self) {
+    pub(crate) fn handle_interrupt(&self) {
         debug!("Entering Interrupt Handler!");
-        self.disable_samplerdy_interrupts();
         let regs = &*self.registers;
         self.client.map(|client| {
-            let mut val = 0;
             // For each of 4 possible compare events, if it's happened,
             // clear it and sort its bit in val to pass in callback
             for i in 0..regs.events_arr.len() {
                 if self.registers.events_arr[i].is_set(Event::READY) {
-                    val = val | 1 << i;
-                    self.registers.events_arr[i].write(Event::READY::CLEAR);
+                    self.registers.events_arr[i].set(0);
                     // Disable corresponding interrupt
-                    let _interrupt_bit = match i {
+                    match i {
                         0 => {
                             debug!("Sample Ready interrupt!");
-                            client.sample_ready ();
-                        },
+                            client.sample_ready();
+                        }
                         2 => {
                             //client.overflow ();
                             debug!("Overflow!");
-                        },
+                        }
                         4 => {
                             if self.state == 1 {
-                                    self.registers.sample_per.write(SampPer::SAMPLEPER.val(5));
-                                    self.registers.tasks_start.write(Task::ENABLE::SET);
-                                    //self.state = 0;
+                                self.registers.sample_per.write(SampPer::SAMPLEPER.val(5));
+                                self.registers.tasks_start.write(Task::ENABLE::SET);
+                                debug!("BADDDD");
+                                //self.state = 0;
                             }
-                        },
+                        }
                         _ => panic!("Unsupported interrupt value!"),
-                    };
+                    }
                 }
             }
         });
         debug!("Finished!");
-        self.enable_samplerdy_interrupts();
     }
 
     fn enable_samplerdy_interrupts(&self) {
@@ -270,32 +267,28 @@ impl Qdec {
     fn is_enabled(&self) -> ReturnCode {
         let regs = &*self.registers;
         let result = if regs.enable.is_set(Task::ENABLE) {
-                        ReturnCode::SUCCESS
-                     } else {
-                        ReturnCode::FAIL
-                     };
+            ReturnCode::SUCCESS
+        } else {
+            ReturnCode::FAIL
+        };
         result
     }
-
 }
 
-impl kernel::hil::qdec::QdecDriver for Qdec { 
-
-    fn enable_interrupts (&self) -> ReturnCode {
-       self.enable_samplerdy_interrupts();
-       debug!("SUCCESS!");
-       ReturnCode::SUCCESS
+impl kernel::hil::qdec::QdecDriver for Qdec {
+    fn enable_interrupts(&self) -> ReturnCode {
+        self.enable_samplerdy_interrupts();
+        ReturnCode::SUCCESS
     }
 
-    fn enable_qdec (&self) -> ReturnCode {
+    fn enable_qdec(&self) -> ReturnCode {
         if self.is_enabled() != ReturnCode::SUCCESS {
-            debug!("Enabled!");
             self.enable();
         }
         self.is_enabled()
     }
 
-    fn enabled (&self) -> ReturnCode {
+    fn enabled(&self) -> ReturnCode {
         self.is_enabled()
     }
 
@@ -306,7 +299,7 @@ impl kernel::hil::qdec::QdecDriver for Qdec {
         debug!("{}", val);
         val
     }
-    
+
     fn set_client(&self, client: &'static dyn kernel::hil::qdec::QdecClient) {
         self.client.set(client);
     }

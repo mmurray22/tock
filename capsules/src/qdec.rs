@@ -17,7 +17,7 @@
 
 use crate::driver;
 use kernel::hil;
-use kernel::{AppId, Callback, ReturnCode, Driver, Grant, debug};
+use kernel::{debug, AppId, Callback, Driver, Grant, ReturnCode};
 
 pub const DRIVER_NUM: usize = driver::NUM::Qdec as usize;
 
@@ -36,18 +36,14 @@ pub struct App {
 
 impl QdecInterface<'a> {
     /// Create a new instance of the QdecInterface
-    pub fn new (
-        driver: &'a dyn  hil::qdec::QdecDriver,
-        grant: Grant<App>,
-    ) -> QdecInterface<'a> {
+    pub fn new(driver: &'a dyn hil::qdec::QdecDriver, grant: Grant<App>) -> QdecInterface<'a> {
         QdecInterface {
             driver: driver,
             apps: grant,
         }
     }
 
-    fn configure_callback(&self, callback: Option<Callback>, app_id: AppId)
-        -> ReturnCode {
+    fn configure_callback(&self, callback: Option<Callback>, app_id: AppId) -> ReturnCode {
         self.apps
             .enter(app_id, |app, _| {
                 app.callback = callback;
@@ -60,13 +56,13 @@ impl QdecInterface<'a> {
 impl hil::qdec::QdecClient for QdecInterface<'a> {
     /// Goes through all the apps and if the app is
     /// subscribed then it sends back the acc value
-    fn sample_ready (&self) {
+    fn sample_ready(&self) {
         debug!("Client Ready!");
         for cntr in self.apps.iter() {
             cntr.enter(|app, _| {
                 if app.subscribed {
-                    //app.subscribed = false;
-                    app.callback.map(|mut cb| cb.schedule(self.driver.get_acc() as usize,0,0));                
+                    app.callback
+                        .map(|mut cb| cb.schedule(self.driver.get_acc() as usize, 0, 0));
                 }
             });
         }
@@ -77,7 +73,7 @@ impl hil::qdec::QdecClient for QdecInterface<'a> {
             cntr.enter(|app, _| {
                 if app.subscribed {
                     app.subscribed = false;
-                    app.callback.map(|mut cb| cb.schedule(self.driver.get_acc() as usize,0,0));                
+                    app.callback.map(|mut cb| cb.schedule(self.driver.get_acc() as usize,0,0));
                 }
             });
         }
@@ -99,17 +95,16 @@ impl Driver for QdecInterface<'a> {
     }
 
     /// Command switch statement for various essential processes
-    fn command (&self, command_num: usize, _: usize, _: usize, _app_id: AppId) -> ReturnCode {
+    fn command(&self, command_num: usize, _: usize, _: usize, _app_id: AppId) -> ReturnCode {
         match command_num {
             0 => ReturnCode::SUCCESS,
             1 => self.driver.enable_qdec(),
             2 => self.driver.enabled(),
             3 => self.driver.enable_interrupts(),
-            4 =>
-              ReturnCode::SuccessWithValue {
+            4 => ReturnCode::SuccessWithValue {
                 value: self.driver.get_acc() as usize,
-              },
-            _ => ReturnCode::ENOSUPPORT
+            },
+            _ => ReturnCode::ENOSUPPORT,
         }
     }
 }

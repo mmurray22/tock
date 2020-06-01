@@ -14,6 +14,7 @@ pub mod i2c;
 pub mod led;
 pub mod nonvolatile_storage;
 pub mod pwm;
+pub mod qdec;
 pub mod radio;
 pub mod rng;
 pub mod sensors;
@@ -23,7 +24,7 @@ pub mod time;
 pub mod uart;
 pub mod usb;
 pub mod watchdog;
-pub mod qdec;
+
 /// Shared interface for configuring components.
 pub trait Controller {
     type Config;
