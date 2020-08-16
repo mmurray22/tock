@@ -57,7 +57,7 @@ impl hil::qdec::QdecClient for QdecInterface<'a> {
     /// Goes through all the apps and if the app is
     /// subscribed then it sends back the acc value
     fn sample_ready(&self) {
-        debug!("Client Ready!");
+        //debug!("Client Ready!");
         for cntr in self.apps.iter() {
             cntr.enter(|app, _| {
                 if app.subscribed {

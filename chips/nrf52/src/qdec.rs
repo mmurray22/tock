@@ -203,23 +203,26 @@ impl Qdec {
     /// of the interrupt register bits are set. If it
     /// is, then put it in the client's bitmask
     pub(crate) fn handle_interrupt(&self) {
-        debug!("Entering Interrupt Handler!");
         let regs = &*self.registers;
         self.client.map(|client| {
             // For each of 4 possible compare events, if it's happened,
             // clear it and sort its bit in val to pass in callback
             for i in 0..regs.events_arr.len() {
-                if self.registers.events_arr[i].is_set(Event::READY) {
-                    self.registers.events_arr[i].set(0);
-                    // Disable corresponding interrupt
+                if regs.events_arr[i].is_set(Event::READY) {
+                    regs.events_arr[i].set(0);
                     match i {
                         0 => {
-                            debug!("Sample Ready interrupt!");
                             client.sample_ready();
                         }
+                        1 => {
+                           //debug!("Report Ready interrupt!");
+                        }
                         2 => {
-                            //client.overflow ();
-                            debug!("Overflow!");
+                            //client.overflow();
+                            //debug!("ACCOF Overflow!");
+                        }
+                        3 => {
+                            debug!("DBLRDY Interrupt!");
                         }
                         4 => {
                             if self.state == 1 {
@@ -229,29 +232,28 @@ impl Qdec {
                                 //self.state = 0;
                             }
                         }
-                        _ => panic!("Unsupported interrupt value!"),
+                        _ => panic!("Unsupported interrupt value {}!", i),
                     }
                 }
             }
         });
-        debug!("Finished!");
     }
 
     fn enable_samplerdy_interrupts(&self) {
         let regs = &*self.registers;
         /*
-        regs.intenset.write(Inte::REPORTRDY::SET);
+        regs.intenset.write(Inte::SAMPLERDY::SET);
         regs.intenset.write(Inte::DBLRDY::SET);
         regs.intenset.write(Inte::STOPPED::SET);
         */
 
-        regs.intenset.write(Inte::SAMPLERDY::SET); /*SET SAMPLE READY*/
+        regs.intenset.write(Inte::REPORTRDY::SET); /*SET SAMPLE READY*/
         regs.intenset.write(Inte::ACCOF::SET); /*SET ACCOF READY*/
     }
 
     fn disable_samplerdy_interrupts(&self) {
         let regs = &*self.registers;
-        regs.intenclr.write(Inte::SAMPLERDY::SET);
+        regs.intenclr.write(Inte::REPORTRDY::SET);
         regs.intenclr.write(Inte::ACCOF::SET);
     }
 
