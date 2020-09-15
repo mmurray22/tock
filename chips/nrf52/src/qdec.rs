@@ -29,16 +29,6 @@ register_structs! {
         (0x0014 => _reserved),
         /// All the events which have interrupts!
         (0x100 => events_arr: [ReadWrite<u32, Event::Register>; 5]),
-        /// Event being generated for every new sample
-        ///(0x100 => events_samplerdy: Write<u32, Event::Register>),
-        /// Non-null report ready
-        ///(0x104 => events_reportrdy: Write<u32, Event::Register>),
-        /// ACC or ACCDBL register overflow
-        ///(0x108 => events_accof: Write<u32, Event::Register>),
-        /// Double displacement detected
-        ///(0x10C => events_dblrdy: Read<u32, Event::Register>),
-        /// events stopped
-        ///(0x110 => events_stopped: Read<u32, Event::Register>),
         (0x0114 => _reserved2),
         /// Shortcut register
         (0x200 => shorts: ReadWrite<u32, Shorts::Register>),
