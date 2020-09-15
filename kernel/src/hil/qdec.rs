@@ -26,8 +26,8 @@ pub trait QdecDriver {
 }
 
 pub trait QdecClient {
-  /// Callback obtaining offset
-  fn sample_ready (&self);
-  /// Indicate to the client that an overflow has occurred
-  fn overflow (&self);
+    /// Indicate to the client that the status of the accumulator has changed
+    fn sample_ready(&self);
+    /// Indicate to the client that an overflow has occurred
+    fn overflow(&self);
 }
