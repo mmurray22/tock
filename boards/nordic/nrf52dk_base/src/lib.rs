@@ -12,13 +12,11 @@ use kernel::common::dynamic_deferred_call::{DynamicDeferredCall, DynamicDeferred
 use kernel::component::Component;
 use kernel::hil;
 use kernel::hil::gpio::{Configure, FloatingState};
-use kernel::hil::qdec::QdecDriver;
 use nrf52::gpio::Pin;
 use nrf52::rtc::Rtc;
 use nrf52::uicr::Regulator0Output; //TODO is this temporary?
                                    //use kernel::common::dynamic_deferred_call::{DynamicDeferredCall, DynamicDeferredCallClientState};
 pub mod nrf52_components;
-//pub mod qdec_test;
 use nrf52_components::ble::BLEComponent;
 use nrf52_components::ieee802154::Ieee802154Component;
 
@@ -442,7 +440,6 @@ pub unsafe fn setup_board<I: nrf52::interrupt_service::InterruptService>(
         nrf52::pinmux::Pinmux::new(qdec_pins.pin_a as u32),
         nrf52::pinmux::Pinmux::new(qdec_pins.pin_b as u32),
     );
-    //let qdec_test = qdec_test::initialize_all(mux_alarm, qdec_nrf52);
     let qdec = static_init!(
         capsules::qdec::QdecInterface<'static>,
         capsules::qdec::QdecInterface::new(
@@ -471,7 +468,6 @@ pub unsafe fn setup_board<I: nrf52::interrupt_service::InterruptService>(
 
     platform.pconsole.start();
     debug!("Initialization complete. Entering main loop\r");
-    //qdec_test.start();
     debug!("{}", &nrf52::ficr::FICR_INSTANCE);
 
     extern "C" {

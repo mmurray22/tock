@@ -9,7 +9,6 @@ use kernel::common::registers::{
     register_bitfields, register_structs, ReadOnly, ReadWrite, WriteOnly,
 };
 use kernel::common::StaticRef;
-use kernel::debug;
 use kernel::ReturnCode;
 use nrf5x::pinmux;
 // In this section I declare a struct called QdecRegisters, which contains all the
@@ -215,20 +214,16 @@ impl Qdec {
                             client.sample_ready();
                         }
                         1 => {
-                           //debug!("Report Ready interrupt!");
                         }
                         2 => {
-                            client.overflow();
-                            debug!("ACCOF Overflow!");
+                            //client.overflow();
                         }
                         3 => {
-                            //debug!("DBLRDY Interrupt!");
                         }
                         4 => {
                             if self.state == 1 {
                                 self.registers.sample_per.write(SampPer::SAMPLEPER.val(5));
                                 self.registers.tasks_start.write(Task::ENABLE::SET);
-                                debug!("BADDDD");
                                 //self.state = 0;
                             }
                         }
@@ -241,28 +236,13 @@ impl Qdec {
 
     fn enable_samplerdy_interrupts(&self) {
         let regs = &*self.registers;
-        /*
-        regs.intenset.write(Inte::SAMPLERDY::SET);
-        regs.intenset.write(Inte::DBLRDY::SET);
-        regs.intenset.write(Inte::STOPPED::SET);
-        */
-
         regs.intenset.write(Inte::REPORTRDY::SET); /*SET SAMPLE READY*/
         regs.intenset.write(Inte::ACCOF::SET); /*SET ACCOF READY*/
-    }
-
-    fn disable_samplerdy_interrupts(&self) {
-        let regs = &*self.registers;
-        regs.intenclr.write(Inte::REPORTRDY::SET);
-        regs.intenclr.write(Inte::ACCOF::SET);
     }
 
     fn enable(&self) {
         let regs = &*self.registers;
         regs.enable.write(Task::ENABLE::SET);
-
-        //set_sample_rate
-        //regs.tasks_stop.write(Task::ENABLE::SET); /*induce stop*/
         regs.tasks_start.write(Task::ENABLE::SET);
     }
 
@@ -298,8 +278,7 @@ impl kernel::hil::qdec::QdecDriver for Qdec {
         let regs = &*self.registers;
         regs.tasks_readclracc.write(Task::ENABLE::SET);
         let val = regs.acc_read.read(Acc::ACC);
-        //debug!("{}", val);
-        val /*as i32*/
+        val
     }
 
     fn set_client(&self, client: &'static dyn kernel::hil::qdec::QdecClient) {

@@ -17,7 +17,7 @@
 
 use crate::driver;
 use kernel::hil;
-use kernel::{debug, AppId, Callback, Driver, Grant, ReturnCode};
+use kernel::{AppId, Callback, Driver, Grant, ReturnCode};
 
 pub const DRIVER_NUM: usize = driver::NUM::Qdec as usize;
 
@@ -57,7 +57,6 @@ impl hil::qdec::QdecClient for QdecInterface<'a> {
     /// Goes through all the apps and if the app is
     /// subscribed then it sends back the acc value
     fn sample_ready(&self) {
-        //debug!("Client Ready!");
         for cntr in self.apps.iter() {
             cntr.enter(|app, _| {
                 app.pos = app.pos + self.driver.get_acc();
@@ -66,9 +65,10 @@ impl hil::qdec::QdecClient for QdecInterface<'a> {
             });
         }
     }
-
+    
+    /// Goes through all the apps and if the app recently
+    /// had an overflow, it records the occurance
     fn overflow (&self) {
-        //debug!("Overflow!");
         for cntr in self.apps.iter() {
             cntr.enter(|app, _| {
                 app.pos = app.pos + self.driver.get_acc();
