@@ -31,7 +31,7 @@ pub struct QdecInterface<'a> {
 /// This struct contains the necessary fields for an app
 pub struct App {
     callback: Option<Callback>,
-    subscribed: bool,
+    pos: u32,
 }
 
 impl QdecInterface<'a> {
@@ -60,24 +60,22 @@ impl hil::qdec::QdecClient for QdecInterface<'a> {
         //debug!("Client Ready!");
         for cntr in self.apps.iter() {
             cntr.enter(|app, _| {
-                if app.subscribed {
-                    app.callback
-                        .map(|mut cb| cb.schedule(self.driver.get_acc() as usize, 0, 0));
-                }
+                app.pos = app.pos + self.driver.get_acc();
+                app.callback
+                    .map(|mut cb| cb.schedule(app.pos as usize, 0, 0));
             });
         }
     }
 
-    /*fn overflow (&self) {
+    fn overflow (&self) {
+        //debug!("Overflow!");
         for cntr in self.apps.iter() {
             cntr.enter(|app, _| {
-                if app.subscribed {
-                    app.subscribed = false;
-                    app.callback.map(|mut cb| cb.schedule(self.driver.get_acc() as usize,0,0));
-                }
+                app.pos = app.pos + self.driver.get_acc();
+                app.callback.map(|mut cb| cb.schedule(self.driver.get_acc() as usize, 0, 0));
             });
         }
-    }*/
+    }
 }
 
 impl Driver for QdecInterface<'a> {

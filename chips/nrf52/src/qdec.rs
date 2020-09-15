@@ -218,11 +218,11 @@ impl Qdec {
                            //debug!("Report Ready interrupt!");
                         }
                         2 => {
-                            //client.overflow();
-                            //debug!("ACCOF Overflow!");
+                            client.overflow();
+                            debug!("ACCOF Overflow!");
                         }
                         3 => {
-                            debug!("DBLRDY Interrupt!");
+                            //debug!("DBLRDY Interrupt!");
                         }
                         4 => {
                             if self.state == 1 {
@@ -298,8 +298,8 @@ impl kernel::hil::qdec::QdecDriver for Qdec {
         let regs = &*self.registers;
         regs.tasks_readclracc.write(Task::ENABLE::SET);
         let val = regs.acc_read.read(Acc::ACC);
-        debug!("{}", val);
-        val
+        //debug!("{}", val);
+        val /*as i32*/
     }
 
     fn set_client(&self, client: &'static dyn kernel::hil::qdec::QdecClient) {

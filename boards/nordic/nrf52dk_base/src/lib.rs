@@ -18,7 +18,7 @@ use nrf52::rtc::Rtc;
 use nrf52::uicr::Regulator0Output; //TODO is this temporary?
                                    //use kernel::common::dynamic_deferred_call::{DynamicDeferredCall, DynamicDeferredCallClientState};
 pub mod nrf52_components;
-pub mod qdec_test;
+//pub mod qdec_test;
 use nrf52_components::ble::BLEComponent;
 use nrf52_components::ieee802154::Ieee802154Component;
 
