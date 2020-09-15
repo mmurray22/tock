@@ -71,8 +71,6 @@ register_structs! {
     }
 }
 
-// In this section, I initialize all the bitfields associated with the type
-// of register assigned to each member of the struct above.
 register_bitfields![u32,
     Task [
         ENABLE 0
@@ -165,11 +163,16 @@ const QDEC_BASE: StaticRef<QdecRegisters> =
 
 pub static mut QDEC: Qdec = Qdec::new();
 
+#[derive(PartialEq, Eq)]
+enum QdecState {
+    Start,
+    Stop,
+}
 /// Qdec type declaration: gives the Qdec instance registers and a client
 pub struct Qdec {
     registers: StaticRef<QdecRegisters>,
     client: OptionalCell<&'static dyn kernel::hil::qdec::QdecClient>,
-    state: usize,
+    state: QdecState,
 }
 
 /// Qdec impl: provides the Qdec type with vital functionality including:
@@ -178,7 +181,7 @@ impl Qdec {
         let qdec = Qdec {
             registers: QDEC_BASE,
             client: OptionalCell::empty(),
-            state: 0, //Start
+            state: QdecState::Start,
         };
         qdec
     }
@@ -213,16 +216,19 @@ impl Qdec {
                         0 => {
                             client.sample_ready();
                         }
-                        1 => { /*No handling for REPORTRDY*/ }
+                        1 => {
+                            /*No handling for REPORTRDY*/
+                        }
                         2 => {
                             client.overflow();
                         }
-                        3 => { /*No handling for DBLRDY*/ }
+                        3 => {
+                            /*No handling for DBLRDY*/
+                        }
                         4 => {
-                            if self.state == 1 {
+                            if self.state == QdecState::Stop {
                                 self.registers.sample_per.write(SampPer::SAMPLEPER.val(5));
                                 self.registers.tasks_start.write(Task::ENABLE::SET);
-                                //self.state = 0;
                             }
                         }
                         _ => panic!("Unsupported interrupt value {}!", i),
@@ -234,7 +240,8 @@ impl Qdec {
 
     fn enable_samplerdy_interrupts(&self) {
         let regs = &*self.registers;
-        regs.intenset.write(Inte::REPORTRDY::SET); /*SET SAMPLE READY*/
+
+        regs.intenset.write(Inte::REPORTRDY::SET); /*SET REPORT READY*/
         regs.intenset.write(Inte::ACCOF::SET); /*SET ACCOF READY*/
     }
 

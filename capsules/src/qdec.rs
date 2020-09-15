@@ -69,9 +69,7 @@ impl hil::qdec::QdecClient for QdecInterface<'a> {
     /// Goes through all the apps and if the app recently
     /// had an overflow, it records the occurance
     fn overflow(&self) {
-        for cntr in self.apps.iter() {
-            cntr.enter(|_app, _| { /*for now, we do not handle overflows!*/ });
-        }
+        /*for now, we do not handle overflows*/
     }
 }
 
@@ -90,6 +88,11 @@ impl Driver for QdecInterface<'a> {
     }
 
     /// Command switch statement for various essential processes
+    /// 0 is a sanity check for the switch statement
+    /// 1 enables the qdec
+    /// 2 checks that the qdec is enabled
+    /// 3 enables inerrupts
+    /// 4 gets the current displacement stored in the QDEC
     fn command(&self, command_num: usize, _: usize, _: usize, _app_id: AppId) -> ReturnCode {
         match command_num {
             0 => ReturnCode::SUCCESS,

@@ -1,31 +1,33 @@
 //! Interface for a Qdec compatible chip
 //!
-//! This trait provides a stanfard interface for chips with a
-//! quadrature decoder. Any interface functions that
-//! a chip cannot implement can be ignored by the chip capsule
+//! This trait provides a stanfard interface for chips with a 
+//! quadrature decoder. Note this interface is experimental and
+//! may need further updates once implemented on additional chips
 
 use crate::returncode::ReturnCode;
 
 pub trait QdecDriver {
-    /// Sets the client which will receive interrupts
-    fn set_client(&self, client: &'static dyn QdecClient);
+  /// Sets the client which will receive interrupts
+  fn set_client(&self, client: &'static dyn QdecClient);  
+ 
+  /// Enables the SAMPLERDY interrupt
+  fn enable_interrupts (&self) -> ReturnCode;
+  
+  /// Enables the Qdec, returning error if Qdec does not exist
+  fn enable_qdec (&self) -> ReturnCode;
 
-    /// Enables the SAMPLERDY interrupt
-    fn enable_interrupts(&self) -> ReturnCode;
+  /// Checks if the qdec has been enabled
+  fn enabled (&self) -> ReturnCode;
 
-    /// Enables the Qdec, returning error if Qdec does not exist
-    fn enable_qdec(&self) -> ReturnCode;
-
-    /// Checks if the qdec has been enabled
-    fn enabled(&self) -> ReturnCode;
-
-    /// Reads the accumulator value and resets it
-    fn get_acc(&self) -> u32;
+  /// Reads the accumulator value and resets it
+  /// Note accumulator means the measure of how many ticks the
+  /// QDEC has moved since the last time the function was called
+  fn get_acc (&self) -> u32;
 }
 
 pub trait QdecClient {
-    /// Callback obtaining offset
-    fn sample_ready(&self);
-    /// Callback dealing with overflows
-    fn overflow(&self);
+  /// Callback obtaining offset
+  fn sample_ready (&self);
+  /// Indicate to the client that an overflow has occurred
+  fn overflow (&self);
 }

@@ -14,8 +14,7 @@ use kernel::hil;
 use kernel::hil::gpio::{Configure, FloatingState};
 use nrf52::gpio::Pin;
 use nrf52::rtc::Rtc;
-use nrf52::uicr::Regulator0Output; //TODO is this temporary?
-                                   //use kernel::common::dynamic_deferred_call::{DynamicDeferredCall, DynamicDeferredCallClientState};
+use nrf52::uicr::Regulator0Output;
 pub mod nrf52_components;
 use nrf52_components::ble::BLEComponent;
 use nrf52_components::ieee802154::Ieee802154Component;
@@ -113,7 +112,6 @@ pub struct Platform {
     // The nRF52dk does not have the flash chip on it, so we make this optional.
     nonvolatile_storage:
         Option<&'static capsules::nonvolatile_storage_driver::NonvolatileStorage<'static>>,
-    //_ => f(None),
 }
 
 impl kernel::Platform for Platform {
