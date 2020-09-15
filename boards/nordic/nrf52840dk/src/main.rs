@@ -68,7 +68,8 @@ use kernel::component::Component;
 #[allow(unused_imports)]
 use kernel::{debug, debug_gpio, debug_verbose, static_init};
 use nrf52840::gpio::Pin;
-use nrf52dk_base::{SpiMX25R6435FPins, SpiPins, UartPins};
+
+use nrf52dk_base::{QdecPins, SpiMX25R6435FPins, SpiPins, UartPins};
 
 // The nRF52840DK LEDs (see back of board)
 const LED1_PIN: Pin = Pin::P0_13;
@@ -95,6 +96,9 @@ const SPI_CLK: Pin = Pin::P0_19;
 const SPI_MX25R6435F_CHIP_SELECT: Pin = Pin::P0_17;
 const SPI_MX25R6435F_WRITE_PROTECT_PIN: Pin = Pin::P0_22;
 const SPI_MX25R6435F_HOLD_PIN: Pin = Pin::P0_23;
+
+const QDEC_PIN_A: Pin = Pin::P0_02;
+const QDEC_PIN_B: Pin = Pin::P0_29;
 
 /// UART Writer
 pub mod io;
@@ -212,6 +216,7 @@ pub unsafe fn reset_handler() {
         FAULT_RESPONSE,
         nrf52840::uicr::Regulator0Output::DEFAULT,
         false,
+        &QdecPins::new(QDEC_PIN_A, QDEC_PIN_B),
         chip,
     );
 }

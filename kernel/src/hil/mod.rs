@@ -14,6 +14,7 @@ pub mod i2c;
 pub mod led;
 pub mod nonvolatile_storage;
 pub mod pwm;
+pub mod qdec;
 pub mod radio;
 pub mod rng;
 pub mod sensors;

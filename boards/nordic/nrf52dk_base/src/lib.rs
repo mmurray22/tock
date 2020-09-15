@@ -1,7 +1,6 @@
 //! Shared setup for nrf52dk boards.
 
 #![no_std]
-
 #[allow(unused_imports)]
 use kernel::{create_capability, debug, debug_gpio, debug_verbose, static_init};
 
@@ -12,10 +11,10 @@ use kernel::capabilities;
 use kernel::common::dynamic_deferred_call::{DynamicDeferredCall, DynamicDeferredCallClientState};
 use kernel::component::Component;
 use kernel::hil;
+use kernel::hil::gpio::{Configure, FloatingState};
 use nrf52::gpio::Pin;
 use nrf52::rtc::Rtc;
 use nrf52::uicr::Regulator0Output;
-
 pub mod nrf52_components;
 use nrf52_components::ble::BLEComponent;
 use nrf52_components::ieee802154::Ieee802154Component;
@@ -71,6 +70,19 @@ impl UartPins {
     }
 }
 
+/// Pins for the QDEC
+#[derive(Debug)]
+pub struct QdecPins {
+    pin_a: Pin,
+    pin_b: Pin,
+}
+
+impl QdecPins {
+    pub fn new(pin_a: Pin, pin_b: Pin) -> Self {
+        Self { pin_a, pin_b }
+    }
+}
+
 /// Supported drivers by the platform
 pub struct Platform {
     ble_radio: &'static capsules::ble_advertising_driver::BLE<
@@ -96,6 +108,7 @@ pub struct Platform {
         'static,
         capsules::virtual_alarm::VirtualMuxAlarm<'static, nrf52::rtc::Rtc<'static>>,
     >,
+    qdec: &'static capsules::qdec::QdecInterface<'static>,
     // The nRF52dk does not have the flash chip on it, so we make this optional.
     nonvolatile_storage:
         Option<&'static capsules::nonvolatile_storage_driver::NonvolatileStorage<'static>>,
@@ -113,6 +126,7 @@ impl kernel::Platform for Platform {
             capsules::led::DRIVER_NUM => f(Some(self.led)),
             capsules::button::DRIVER_NUM => f(Some(self.button)),
             capsules::rng::DRIVER_NUM => f(Some(self.rng)),
+            capsules::qdec::DRIVER_NUM => f(Some(self.qdec)),
             capsules::ble_advertising_driver::DRIVER_NUM => f(Some(self.ble_radio)),
             capsules::ieee802154::DRIVER_NUM => match self.ieee802154_radio {
                 Some(radio) => f(Some(radio)),
@@ -150,6 +164,7 @@ pub unsafe fn setup_board<I: nrf52::interrupt_service::InterruptService>(
     app_fault_response: kernel::procs::FaultResponse,
     reg_vout: Regulator0Output,
     nfc_as_gpios: bool,
+    qdec_pins: &QdecPins,
     chip: &'static nrf52::chip::NRF52<I>,
 ) {
     // Make non-volatile memory writable and activate the reset button
@@ -412,6 +427,26 @@ pub unsafe fn setup_board<I: nrf52::interrupt_service::InterruptService>(
     );
     DynamicDeferredCall::set_global_instance(dynamic_deferred_call);
 
+    //START: QDEC INITIALIZATION
+    gpio_port[qdec_pins.pin_a].make_input();
+    gpio_port[qdec_pins.pin_b].make_input();
+    gpio_port[qdec_pins.pin_a].set_floating_state(FloatingState::PullUp);
+    gpio_port[qdec_pins.pin_b].set_floating_state(FloatingState::PullUp);
+
+    let qdec_nrf52 = &mut nrf52::qdec::QDEC;
+    qdec_nrf52.set_pins(
+        nrf52::pinmux::Pinmux::new(qdec_pins.pin_a as u32),
+        nrf52::pinmux::Pinmux::new(qdec_pins.pin_b as u32),
+    );
+    let qdec = static_init!(
+        capsules::qdec::QdecInterface<'static>,
+        capsules::qdec::QdecInterface::new(
+            qdec_nrf52,
+            board_kernel.create_grant(&memory_allocation_capability)
+        )
+    );
+    kernel::hil::qdec::QdecDriver::set_client(&nrf52::qdec::QDEC, qdec);
+
     let platform = Platform {
         button: button,
         ble_radio: ble_radio,
@@ -425,6 +460,7 @@ pub unsafe fn setup_board<I: nrf52::interrupt_service::InterruptService>(
         alarm: alarm,
         analog_comparator: analog_comparator,
         nonvolatile_storage: nonvolatile_storage,
+        qdec: qdec,
         ipc: kernel::ipc::IPC::new(board_kernel, &memory_allocation_capability),
     };
 
@@ -445,6 +481,5 @@ pub unsafe fn setup_board<I: nrf52::interrupt_service::InterruptService>(
         app_fault_response,
         &process_management_capability,
     );
-
     board_kernel.kernel_loop(&platform, chip, Some(&platform.ipc), &main_loop_capability);
 }
