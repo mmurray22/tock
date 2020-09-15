@@ -214,11 +214,13 @@ impl Qdec {
                             client.sample_ready();
                         }
                         1 => {
+                            /*No handling for REPORTRDY*/
                         }
                         2 => {
-                            //client.overflow();
+                            client.overflow();
                         }
                         3 => {
+                            /*No handling for DBLRDY*/
                         }
                         4 => {
                             if self.state == 1 {

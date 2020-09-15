@@ -70,9 +70,8 @@ impl hil::qdec::QdecClient for QdecInterface<'a> {
     /// had an overflow, it records the occurance
     fn overflow (&self) {
         for cntr in self.apps.iter() {
-            cntr.enter(|app, _| {
-                app.pos = app.pos + self.driver.get_acc();
-                app.callback.map(|mut cb| cb.schedule(self.driver.get_acc() as usize, 0, 0));
+            cntr.enter(|_app, _| {
+                /*for now, we do not handle overflows!*/
             });
         }
     }
