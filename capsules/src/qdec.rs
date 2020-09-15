@@ -65,14 +65,12 @@ impl hil::qdec::QdecClient for QdecInterface<'a> {
             });
         }
     }
-    
+
     /// Goes through all the apps and if the app recently
     /// had an overflow, it records the occurance
-    fn overflow (&self) {
+    fn overflow(&self) {
         for cntr in self.apps.iter() {
-            cntr.enter(|_app, _| {
-                /*for now, we do not handle overflows!*/
-            });
+            cntr.enter(|_app, _| { /*for now, we do not handle overflows!*/ });
         }
     }
 }

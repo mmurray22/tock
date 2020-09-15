@@ -213,15 +213,11 @@ impl Qdec {
                         0 => {
                             client.sample_ready();
                         }
-                        1 => {
-                            /*No handling for REPORTRDY*/
-                        }
+                        1 => { /*No handling for REPORTRDY*/ }
                         2 => {
                             client.overflow();
                         }
-                        3 => {
-                            /*No handling for DBLRDY*/
-                        }
+                        3 => { /*No handling for DBLRDY*/ }
                         4 => {
                             if self.state == 1 {
                                 self.registers.sample_per.write(SampPer::SAMPLEPER.val(5));

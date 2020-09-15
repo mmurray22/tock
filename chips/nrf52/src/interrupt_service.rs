@@ -4,9 +4,9 @@ use crate::ble_radio;
 use crate::i2c;
 use crate::ieee802154_radio;
 use crate::power;
+use crate::qdec;
 use crate::spi;
 use crate::uart;
-use crate::qdec;
 use kernel::debug;
 use nrf5x::peripheral_interrupts;
 
