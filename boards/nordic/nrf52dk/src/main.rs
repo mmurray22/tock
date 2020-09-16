@@ -61,14 +61,20 @@
 //! * July 16, 2017
 
 #![no_std]
-#![no_main]
+// Disable this attribute when documenting, as a workaround for
+// https://github.com/rust-lang/rust/issues/62184.
+#![cfg_attr(not(doc), no_main)]
+#![feature(const_in_array_repeat_expressions)]
 #![deny(missing_docs)]
 
+use capsules::virtual_alarm::VirtualMuxAlarm;
+use kernel::common::dynamic_deferred_call::{DynamicDeferredCall, DynamicDeferredCallClientState};
 use kernel::component::Component;
 #[allow(unused_imports)]
-use kernel::{debug, debug_gpio, debug_verbose, static_init};
+use kernel::{capabilities, create_capability, debug, debug_gpio, debug_verbose, static_init};
 use nrf52832::gpio::Pin;
-use nrf52dk_base::{SpiPins, UartPins};
+use nrf52832::rtc::Rtc;
+use nrf52_components::{self, UartChannel, UartPins};
 
 // The nRF52 DK LEDs (see back of board)
 const LED1_PIN: Pin = Pin::P0_17;
@@ -83,14 +89,15 @@ const BUTTON3_PIN: Pin = Pin::P0_15;
 const BUTTON4_PIN: Pin = Pin::P0_16;
 const BUTTON_RST_PIN: Pin = Pin::P0_21;
 
-const UART_RTS: Pin = Pin::P0_05;
+const UART_RTS: Option<Pin> = Some(Pin::P0_05);
 const UART_TXD: Pin = Pin::P0_06;
-const UART_CTS: Pin = Pin::P0_07;
+const UART_CTS: Option<Pin> = Some(Pin::P0_07);
 const UART_RXD: Pin = Pin::P0_08;
 
-const SPI_MOSI: Pin = Pin::P0_22;
-const SPI_MISO: Pin = Pin::P0_23;
-const SPI_CLK: Pin = Pin::P0_24;
+// SPI not used, but keep pins around
+const _SPI_MOSI: Pin = Pin::P0_22;
+const _SPI_MISO: Pin = Pin::P0_23;
+const _SPI_CLK: Pin = Pin::P0_24;
 
 /// UART Writer
 pub mod io;
@@ -108,16 +115,64 @@ const FAULT_RESPONSE: kernel::procs::FaultResponse = kernel::procs::FaultRespons
 // Number of concurrent processes this platform supports.
 const NUM_PROCS: usize = 4;
 
-#[link_section = ".app_memory"]
-static mut APP_MEMORY: [u8; 32768] = [0; 32768];
+static mut PROCESSES: [Option<&'static dyn kernel::procs::ProcessType>; NUM_PROCS] = [None; 4];
 
-static mut PROCESSES: [Option<&'static dyn kernel::procs::ProcessType>; NUM_PROCS] =
-    [None, None, None, None];
+// Static reference to chip for panic dumps
+static mut CHIP: Option<&'static nrf52832::chip::Chip> = None;
 
 /// Dummy buffer that causes the linker to reserve enough space for the stack.
 #[no_mangle]
 #[link_section = ".stack_buffer"]
 pub static mut STACK_MEMORY: [u8; 0x1000] = [0; 0x1000];
+
+/// Supported drivers by the platform
+pub struct Platform {
+    ble_radio: &'static capsules::ble_advertising_driver::BLE<
+        'static,
+        nrf52832::ble_radio::Radio<'static>,
+        VirtualMuxAlarm<'static, Rtc<'static>>,
+    >,
+    button: &'static capsules::button::Button<'static, nrf52832::gpio::GPIOPin<'static>>,
+    pconsole: &'static capsules::process_console::ProcessConsole<
+        'static,
+        components::process_console::Capability,
+    >,
+    console: &'static capsules::console::Console<'static>,
+    gpio: &'static capsules::gpio::GPIO<'static, nrf52832::gpio::GPIOPin<'static>>,
+    led: &'static capsules::led::LED<'static, nrf52832::gpio::GPIOPin<'static>>,
+    rng: &'static capsules::rng::RngDriver<'static>,
+    temp: &'static capsules::temperature::TemperatureSensor<'static>,
+    ipc: kernel::ipc::IPC,
+    analog_comparator: &'static capsules::analog_comparator::AnalogComparator<
+        'static,
+        nrf52832::acomp::Comparator<'static>,
+    >,
+    alarm: &'static capsules::alarm::AlarmDriver<
+        'static,
+        capsules::virtual_alarm::VirtualMuxAlarm<'static, nrf52832::rtc::Rtc<'static>>,
+    >,
+}
+
+impl kernel::Platform for Platform {
+    fn with_driver<F, R>(&self, driver_num: usize, f: F) -> R
+    where
+        F: FnOnce(Option<&dyn kernel::Driver>) -> R,
+    {
+        match driver_num {
+            capsules::console::DRIVER_NUM => f(Some(self.console)),
+            capsules::gpio::DRIVER_NUM => f(Some(self.gpio)),
+            capsules::alarm::DRIVER_NUM => f(Some(self.alarm)),
+            capsules::led::DRIVER_NUM => f(Some(self.led)),
+            capsules::button::DRIVER_NUM => f(Some(self.button)),
+            capsules::rng::DRIVER_NUM => f(Some(self.rng)),
+            capsules::ble_advertising_driver::DRIVER_NUM => f(Some(self.ble_radio)),
+            capsules::temperature::DRIVER_NUM => f(Some(self.temp)),
+            capsules::analog_comparator::DRIVER_NUM => f(Some(self.analog_comparator)),
+            kernel::ipc::DRIVER_NUM => f(Some(&self.ipc)),
+            _ => f(None),
+        }
+    }
+}
 
 /// Entry point in the vector table called on hard reset.
 #[no_mangle]
@@ -126,89 +181,219 @@ pub unsafe fn reset_handler() {
     nrf52832::init();
 
     let board_kernel = static_init!(kernel::Kernel, kernel::Kernel::new(&PROCESSES));
-    let gpio = components::gpio::GpioComponent::new(board_kernel).finalize(
+
+    let gpio = components::gpio::GpioComponent::new(
+        board_kernel,
         components::gpio_component_helper!(
+            nrf52832::gpio::GPIOPin,
             // Bottom right header on DK board
-            &nrf52832::gpio::PORT[Pin::P0_03],
-            &nrf52832::gpio::PORT[Pin::P0_04],
-            &nrf52832::gpio::PORT[Pin::P0_28],
-            &nrf52832::gpio::PORT[Pin::P0_29],
-            &nrf52832::gpio::PORT[Pin::P0_30],
-            &nrf52832::gpio::PORT[Pin::P0_31],
+            0 => &nrf52832::gpio::PORT[Pin::P0_03],
+            1 => &nrf52832::gpio::PORT[Pin::P0_04],
+            2 => &nrf52832::gpio::PORT[Pin::P0_28],
+            3 => &nrf52832::gpio::PORT[Pin::P0_29],
+            4 => &nrf52832::gpio::PORT[Pin::P0_30],
+            5 => &nrf52832::gpio::PORT[Pin::P0_31],
             // Top mid header on DK board
-            &nrf52832::gpio::PORT[Pin::P0_12],
-            &nrf52832::gpio::PORT[Pin::P0_11],
+            6 => &nrf52832::gpio::PORT[Pin::P0_12],
+            7 => &nrf52832::gpio::PORT[Pin::P0_11],
             // Top left header on DK board
-            &nrf52832::gpio::PORT[Pin::P0_27],
-            &nrf52832::gpio::PORT[Pin::P0_26],
-            &nrf52832::gpio::PORT[Pin::P0_02],
-            &nrf52832::gpio::PORT[Pin::P0_25]
+            8 => &nrf52832::gpio::PORT[Pin::P0_27],
+            9 => &nrf52832::gpio::PORT[Pin::P0_26],
+            10 => &nrf52832::gpio::PORT[Pin::P0_02],
+            11 => &nrf52832::gpio::PORT[Pin::P0_25]
         ),
-    );
-    let button = components::button::ButtonComponent::new(board_kernel).finalize(
+    )
+    .finalize(components::gpio_component_buf!(nrf52832::gpio::GPIOPin));
+
+    let button = components::button::ButtonComponent::new(
+        board_kernel,
         components::button_component_helper!(
+            nrf52832::gpio::GPIOPin,
             (
                 &nrf52832::gpio::PORT[BUTTON1_PIN],
-                capsules::button::GpioMode::LowWhenPressed,
+                kernel::hil::gpio::ActivationMode::ActiveLow,
                 kernel::hil::gpio::FloatingState::PullUp
             ), //13
             (
                 &nrf52832::gpio::PORT[BUTTON2_PIN],
-                capsules::button::GpioMode::LowWhenPressed,
+                kernel::hil::gpio::ActivationMode::ActiveLow,
                 kernel::hil::gpio::FloatingState::PullUp
             ), //14
             (
                 &nrf52832::gpio::PORT[BUTTON3_PIN],
-                capsules::button::GpioMode::LowWhenPressed,
+                kernel::hil::gpio::ActivationMode::ActiveLow,
                 kernel::hil::gpio::FloatingState::PullUp
             ), //15
             (
                 &nrf52832::gpio::PORT[BUTTON4_PIN],
-                capsules::button::GpioMode::LowWhenPressed,
+                kernel::hil::gpio::ActivationMode::ActiveLow,
                 kernel::hil::gpio::FloatingState::PullUp
             ) //16
         ),
-    );
+    )
+    .finalize(components::button_component_buf!(nrf52832::gpio::GPIOPin));
 
-    let led = components::led::LedsComponent::new().finalize(components::led_component_helper!(
+    let led = components::led::LedsComponent::new(components::led_component_helper!(
+        nrf52832::gpio::GPIOPin,
         (
             &nrf52832::gpio::PORT[LED1_PIN],
-            capsules::led::ActivationMode::ActiveLow
+            kernel::hil::gpio::ActivationMode::ActiveLow
         ),
         (
             &nrf52832::gpio::PORT[LED2_PIN],
-            capsules::led::ActivationMode::ActiveLow
+            kernel::hil::gpio::ActivationMode::ActiveLow
         ),
         (
             &nrf52832::gpio::PORT[LED3_PIN],
-            capsules::led::ActivationMode::ActiveLow
+            kernel::hil::gpio::ActivationMode::ActiveLow
         ),
         (
             &nrf52832::gpio::PORT[LED4_PIN],
-            capsules::led::ActivationMode::ActiveLow
+            kernel::hil::gpio::ActivationMode::ActiveLow
         )
-    ));
-    let chip = static_init!(nrf52832::chip::Chip, nrf52832::chip::new());
+    ))
+    .finalize(components::led_component_buf!(nrf52832::gpio::GPIOPin));
 
-    nrf52dk_base::setup_board(
-        board_kernel,
-        BUTTON_RST_PIN,
-        &nrf52832::gpio::PORT,
-        gpio,
-        LED1_PIN,
-        LED2_PIN,
-        LED3_PIN,
-        led,
-        &UartPins::new(UART_RTS, UART_TXD, UART_CTS, UART_RXD),
-        &SpiPins::new(SPI_MOSI, SPI_MISO, SPI_CLK),
-        &None,
-        button,
+    let chip = static_init!(nrf52832::chip::Chip, nrf52832::chip::new());
+    CHIP = Some(chip);
+
+    nrf52_components::startup::NrfStartupComponent::new(
         false,
-        &mut APP_MEMORY,
+        BUTTON_RST_PIN,
+        nrf52832::uicr::Regulator0Output::DEFAULT,
+    )
+    .finalize(());
+
+    // Create capabilities that the board needs to call certain protected kernel
+    // functions.
+    let process_management_capability =
+        create_capability!(capabilities::ProcessManagementCapability);
+    let main_loop_capability = create_capability!(capabilities::MainLoopCapability);
+    let memory_allocation_capability = create_capability!(capabilities::MemoryAllocationCapability);
+
+    let gpio_port = &nrf52832::gpio::PORT;
+    // Configure kernel debug gpios as early as possible
+    kernel::debug::assign_gpios(
+        Some(&gpio_port[LED1_PIN]),
+        Some(&gpio_port[LED2_PIN]),
+        Some(&gpio_port[LED3_PIN]),
+    );
+
+    let rtc = &nrf52832::rtc::RTC;
+    rtc.start();
+    let mux_alarm = components::alarm::AlarmMuxComponent::new(rtc)
+        .finalize(components::alarm_mux_component_helper!(nrf52832::rtc::Rtc));
+    let alarm = components::alarm::AlarmDriverComponent::new(board_kernel, mux_alarm)
+        .finalize(components::alarm_component_helper!(nrf52832::rtc::Rtc));
+    let uart_channel = UartChannel::Pins(UartPins::new(UART_RTS, UART_TXD, UART_CTS, UART_RXD));
+    let channel = nrf52_components::UartChannelComponent::new(uart_channel, mux_alarm).finalize(());
+
+    let dynamic_deferred_call_clients =
+        static_init!([DynamicDeferredCallClientState; 2], Default::default());
+    let dynamic_deferred_caller = static_init!(
+        DynamicDeferredCall,
+        DynamicDeferredCall::new(dynamic_deferred_call_clients)
+    );
+    DynamicDeferredCall::set_global_instance(dynamic_deferred_caller);
+
+    // Create a shared UART channel for the console and for kernel debug.
+    let uart_mux =
+        components::console::UartMuxComponent::new(channel, 115200, dynamic_deferred_caller)
+            .finalize(());
+
+    let pconsole =
+        components::process_console::ProcessConsoleComponent::new(board_kernel, uart_mux)
+            .finalize(());
+
+    // Setup the console.
+    let console = components::console::ConsoleComponent::new(board_kernel, uart_mux).finalize(());
+    // Create the debugger object that handles calls to `debug!()`.
+    components::debug_writer::DebugWriterComponent::new(uart_mux).finalize(());
+
+    let ble_radio =
+        nrf52_components::BLEComponent::new(board_kernel, &nrf52832::ble_radio::RADIO, mux_alarm)
+            .finalize(());
+
+    let temp = components::temperature::TemperatureComponent::new(
+        board_kernel,
+        &nrf52832::temperature::TEMP,
+    )
+    .finalize(());
+
+    let rng = components::rng::RngComponent::new(board_kernel, &nrf52832::trng::TRNG).finalize(());
+
+    // Initialize AC using AIN5 (P0.29) as VIN+ and VIN- as AIN0 (P0.02)
+    // These are hardcoded pin assignments specified in the driver
+    let analog_comparator = components::analog_comparator::AcComponent::new(
+        &nrf52832::acomp::ACOMP,
+        components::acomp_component_helper!(
+            nrf52832::acomp::Channel,
+            &nrf52832::acomp::CHANNEL_AC0
+        ),
+    )
+    .finalize(components::acomp_component_buf!(
+        nrf52832::acomp::Comparator
+    ));
+
+    nrf52_components::NrfClockComponent::new().finalize(());
+
+    let platform = Platform {
+        button,
+        ble_radio,
+        pconsole,
+        console,
+        led,
+        gpio,
+        rng,
+        temp,
+        alarm,
+        analog_comparator,
+        ipc: kernel::ipc::IPC::new(board_kernel, &memory_allocation_capability),
+    };
+
+    platform.pconsole.start();
+    debug!("Initialization complete. Entering main loop\r");
+    debug!("{}", &nrf52832::ficr::FICR_INSTANCE);
+
+    /// These symbols are defined in the linker script.
+    extern "C" {
+        /// Beginning of the ROM region containing app images.
+        static _sapps: u8;
+        /// End of the ROM region containing app images.
+        static _eapps: u8;
+        /// Beginning of the RAM region for app memory.
+        static mut _sappmem: u8;
+        /// End of the RAM region for app memory.
+        static _eappmem: u8;
+    }
+
+    kernel::procs::load_processes(
+        board_kernel,
+        chip,
+        core::slice::from_raw_parts(
+            &_sapps as *const u8,
+            &_eapps as *const u8 as usize - &_sapps as *const u8 as usize,
+        ),
+        core::slice::from_raw_parts_mut(
+            &mut _sappmem as *mut u8,
+            &_eappmem as *const u8 as usize - &_sappmem as *const u8 as usize,
+        ),
         &mut PROCESSES,
         FAULT_RESPONSE,
-        nrf52832::uicr::Regulator0Output::DEFAULT,
-        false,
+        &process_management_capability,
+    )
+    .unwrap_or_else(|err| {
+        debug!("Error loading processes!");
+        debug!("{:?}", err);
+    });
+
+    let scheduler = components::sched::round_robin::RoundRobinComponent::new(&PROCESSES)
+        .finalize(components::rr_component_helper!(NUM_PROCS));
+    board_kernel.kernel_loop(
+        &platform,
         chip,
+        Some(&platform.ipc),
+        scheduler,
+        &main_loop_capability,
     );
 }

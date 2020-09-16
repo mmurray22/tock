@@ -1,6 +1,7 @@
 use crate::deferred_call_tasks::DeferredCallTask;
 use crate::interrupt_service::InterruptService;
 use crate::nvmc;
+use core::fmt::Write;
 use cortexm4::{self, nvic};
 use kernel::common::deferred_call;
 use kernel::debug;
@@ -8,7 +9,7 @@ use kernel::debug;
 pub struct NRF52<I: InterruptService> {
     mpu: cortexm4::mpu::MPU,
     userspace_kernel_boundary: cortexm4::syscall::SysCall,
-    systick: cortexm4::systick::SysTick,
+    scheduler_timer: cortexm4::systick::SysTick,
     interrupt_service: I,
 }
 
@@ -19,7 +20,7 @@ impl<I: InterruptService> NRF52<I> {
             userspace_kernel_boundary: cortexm4::syscall::SysCall::new(),
             // The NRF52's systick is uncalibrated, but is clocked from the
             // 64Mhz CPU clock.
-            systick: cortexm4::systick::SysTick::new_with_calibration(64000000),
+            scheduler_timer: cortexm4::systick::SysTick::new_with_calibration(64000000),
             interrupt_service,
         }
     }
@@ -28,14 +29,19 @@ impl<I: InterruptService> NRF52<I> {
 impl<I: InterruptService> kernel::Chip for NRF52<I> {
     type MPU = cortexm4::mpu::MPU;
     type UserspaceKernelBoundary = cortexm4::syscall::SysCall;
-    type SysTick = cortexm4::systick::SysTick;
+    type SchedulerTimer = cortexm4::systick::SysTick;
+    type WatchDog = ();
 
     fn mpu(&self) -> &Self::MPU {
         &self.mpu
     }
 
-    fn systick(&self) -> &Self::SysTick {
-        &self.systick
+    fn scheduler_timer(&self) -> &Self::SchedulerTimer {
+        &self.scheduler_timer
+    }
+
+    fn watchdog(&self) -> &Self::WatchDog {
+        &()
     }
 
     fn userspace_kernel_boundary(&self) -> &Self::UserspaceKernelBoundary {
@@ -78,5 +84,9 @@ impl<I: InterruptService> kernel::Chip for NRF52<I> {
         F: FnOnce() -> R,
     {
         cortexm4::support::atomic(f)
+    }
+
+    unsafe fn print_state(&self, write: &mut dyn Write) {
+        cortexm4::print_cortexm4_state(write);
     }
 }

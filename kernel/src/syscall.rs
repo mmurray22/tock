@@ -50,14 +50,12 @@ pub enum Syscall {
 }
 
 /// Why the process stopped executing and execution returned to the kernel.
-#[derive(PartialEq)]
+#[derive(PartialEq, Copy, Clone)]
 pub enum ContextSwitchReason {
     /// Process called a syscall. Also returns the syscall and relevant values.
     SyscallFired { syscall: Syscall },
     /// Process triggered the hardfault handler.
     Fault,
-    /// Process exceeded its timeslice.
-    TimesliceExpired,
     /// Process interrupted (e.g. by a hardware event)
     Interrupted,
 }
@@ -73,7 +71,7 @@ pub trait UserspaceKernelBoundary {
     /// Implementations should **not** rely on the `Default` constructor (custom
     /// or derived) for any initialization of a process's stored state. The
     /// initialization must happen in the `initialize_process()` function.
-    type StoredState: Default + Copy;
+    type StoredState: Default;
 
     /// Called by the kernel after it has memory allocated to it but before it
     /// is allowed to begin executing. Allows for architecture-specific process
@@ -152,12 +150,9 @@ pub trait UserspaceKernelBoundary {
         state: &mut Self::StoredState,
     ) -> (*mut usize, ContextSwitchReason);
 
-    /// Display any general information about the fault.
-    unsafe fn fault_fmt(&self, writer: &mut dyn Write);
-
     /// Display architecture specific (e.g. CPU registers or status flags) data
     /// for a process identified by its stack pointer.
-    unsafe fn process_detail_fmt(
+    unsafe fn print_context(
         &self,
         stack_pointer: *const usize,
         state: &Self::StoredState,

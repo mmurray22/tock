@@ -14,8 +14,6 @@
 // Author: Amit Levy <amit@amitlevy.com>
 // Last modified: 12/04/2019
 
-#![allow(dead_code)] // Components are intended to be conditionally included
-
 use capsules::low_level_debug;
 use capsules::virtual_uart::{MuxUart, UartDevice};
 use kernel::capabilities;
@@ -45,7 +43,7 @@ impl Component for LowLevelDebugComponent {
     type StaticInput = ();
     type Output = &'static low_level_debug::LowLevelDebug<'static, UartDevice<'static>>;
 
-    unsafe fn finalize(&mut self, _s: Self::StaticInput) -> Self::Output {
+    unsafe fn finalize(self, _s: Self::StaticInput) -> Self::Output {
         let grant_cap = create_capability!(capabilities::MemoryAllocationCapability);
 
         // Create virtual device for console.

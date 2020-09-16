@@ -6,13 +6,16 @@
 //! You need a device that provides the `hil::uart::UART` trait.
 //!
 //! ```rust
+//! # use kernel::static_init;
+//! # use capsules::console::Console;
+//!
 //! let console = static_init!(
 //!     Console<usart::USART>,
 //!     Console::new(&usart::USART0,
 //!                  115200,
 //!                  &mut console::WRITE_BUF,
 //!                  &mut console::READ_BUF,
-//!                  kernel::Grant::create()));
+//!                  board_kernel.create_grant(&grant_cap)));
 //! hil::uart::UART::set_client(&usart::USART0, console);
 //! ```
 //!
@@ -68,7 +71,7 @@ pub struct Console<'a> {
     rx_buffer: TakeCell<'static, [u8]>,
 }
 
-impl Console<'a> {
+impl<'a> Console<'a> {
     pub fn new(
         uart: &'a dyn uart::UartData<'a>,
         tx_buffer: &'static mut [u8],
@@ -181,7 +184,7 @@ impl Console<'a> {
     }
 }
 
-impl Driver for Console<'a> {
+impl Driver for Console<'_> {
     /// Setup shared buffers.
     ///
     /// ### `allow_num`
@@ -276,7 +279,7 @@ impl Driver for Console<'a> {
     }
 }
 
-impl uart::TransmitClient for Console<'a> {
+impl uart::TransmitClient for Console<'_> {
     fn transmitted_buffer(&self, buffer: &'static mut [u8], _tx_len: usize, _rcode: ReturnCode) {
         // Either print more from the AppSlice or send a callback to the
         // application.
@@ -341,7 +344,7 @@ impl uart::TransmitClient for Console<'a> {
     }
 }
 
-impl uart::ReceiveClient for Console<'a> {
+impl uart::ReceiveClient for Console<'_> {
     fn received_buffer(
         &self,
         buffer: &'static mut [u8],
@@ -365,7 +368,36 @@ impl uart::ReceiveClient for Console<'a> {
                                         for (a, b) in app_buffer.iter_mut().zip(rx_buffer) {
                                             *a = *b;
                                         }
-                                        cb.schedule(From::from(rcode), rx_len, 0);
+
+                                        // Make sure we report the same number
+                                        // of bytes that we actually copied into
+                                        // the app's buffer. This is defensive:
+                                        // we shouldn't ever receive more bytes
+                                        // than will fit in the app buffer since
+                                        // we use the app_buffer's length when
+                                        // calling `receive()`. However, a buggy
+                                        // lower layer could return more bytes
+                                        // than we asked for, and we don't want
+                                        // to propagate that length error to
+                                        // userspace. However, we do return an
+                                        // error code so that userspace knows
+                                        // something went wrong.
+                                        let (ret, received_length) = if rx_len > app_buffer.len() {
+                                            // Return `ESIZE` indicating that
+                                            // some received bytes were dropped.
+                                            // We report the length that we
+                                            // actually copied into the buffer,
+                                            // but also indicate that there was
+                                            // an issue in the kernel with the
+                                            // receive.
+                                            (ReturnCode::ESIZE, app_buffer.len())
+                                        } else {
+                                            // This is the normal and expected
+                                            // case.
+                                            (rcode, rx_len)
+                                        };
+
+                                        cb.schedule(From::from(ret), received_length, 0);
                                     } else {
                                         // Oops, no app buffer
                                         cb.schedule(From::from(ReturnCode::EINVAL), 0, 0);

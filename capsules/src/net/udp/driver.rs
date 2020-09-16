@@ -7,6 +7,7 @@
 //! hard-coded).
 
 use crate::net::ipv6::ip_utils::IPAddr;
+use crate::net::network_capabilities::NetworkCapability;
 use crate::net::stream::encode_u16;
 use crate::net::stream::encode_u8;
 use crate::net::stream::SResult;
@@ -93,6 +94,8 @@ pub struct UDPDriver<'a> {
     kernel_buffer: MapCell<LeasableBuffer<'static, u8>>,
 
     driver_send_cap: &'static dyn UdpDriverCapability,
+
+    net_cap: &'static NetworkCapability,
 }
 
 impl<'a> UDPDriver<'a> {
@@ -104,6 +107,7 @@ impl<'a> UDPDriver<'a> {
         port_table: &'static UdpPortManager,
         kernel_buffer: LeasableBuffer<'static, u8>,
         driver_send_cap: &'static dyn UdpDriverCapability,
+        net_cap: &'static NetworkCapability,
     ) -> UDPDriver<'a> {
         UDPDriver {
             sender: sender,
@@ -114,6 +118,7 @@ impl<'a> UDPDriver<'a> {
             port_table: port_table,
             kernel_buffer: MapCell::new(kernel_buffer),
             driver_send_cap: driver_send_cap,
+            net_cap: net_cap,
         }
     }
 
@@ -271,6 +276,7 @@ impl<'a> UDPDriver<'a> {
                                 src_port,
                                 kernel_buffer,
                                 self.driver_send_cap,
+                                self.net_cap,
                             ) {
                                 Ok(_) => ReturnCode::SUCCESS,
                                 Err(mut buf) => {
@@ -450,7 +456,6 @@ impl<'a> Driver for UDPDriver<'a> {
     ///        Currently, only will transmit if the app has bound to the port passed in the tx_cfg
     ///        buf as the source address. If no port is bound, returns ERESERVE, if it tries to
     ///        send on a port other than the port which is bound, returns EINVALID.
-    ///
     ///        Notably, the currently transmit implementation allows for starvation - an
     ///        an app with a lower app id can send constantly and starve an app with a
     ///        later ID.

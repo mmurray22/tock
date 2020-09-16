@@ -4,16 +4,20 @@
 //! - <https://github.com/lab11/hail>
 
 #![no_std]
-#![no_main]
+// Disable this attribute when documenting, as a workaround for
+// https://github.com/rust-lang/rust/issues/62184.
+#![cfg_attr(not(doc), no_main)]
+#![feature(const_in_array_repeat_expressions)]
 #![deny(missing_docs)]
 
 use capsules::virtual_alarm::VirtualMuxAlarm;
 use capsules::virtual_i2c::{I2CDevice, MuxI2C};
-use capsules::virtual_spi::{MuxSpiMaster, VirtualSpiMasterDevice};
+use capsules::virtual_spi::VirtualSpiMasterDevice;
 use kernel::capabilities;
 use kernel::common::dynamic_deferred_call::{DynamicDeferredCall, DynamicDeferredCallClientState};
 use kernel::component::Component;
 use kernel::hil;
+use kernel::hil::i2c::I2CMaster;
 use kernel::hil::Controller;
 use kernel::Platform;
 #[allow(unused_imports)]
@@ -31,16 +35,10 @@ mod test_take_map_cell;
 // Number of concurrent processes this platform supports.
 const NUM_PROCS: usize = 20;
 
-// How should the kernel respond when a process faults.
-const FAULT_RESPONSE: kernel::procs::FaultResponse = kernel::procs::FaultResponse::Panic;
-
-// RAM to be shared by all application processes.
-#[link_section = ".app_memory"]
-static mut APP_MEMORY: [u8; 49152] = [0; 49152];
-
 // Actual memory for holding the active process structures.
 static mut PROCESSES: [Option<&'static dyn kernel::procs::ProcessType>; NUM_PROCS] =
     [None; NUM_PROCS];
+static mut CHIP: Option<&'static sam4l::chip::Sam4l> = None;
 
 /// Dummy buffer that causes the linker to reserve enough space for the stack.
 #[no_mangle]
@@ -51,7 +49,7 @@ pub static mut STACK_MEMORY: [u8; 0x1000] = [0; 0x1000];
 /// capsules for this platform.
 struct Hail {
     console: &'static capsules::console::Console<'static>,
-    gpio: &'static capsules::gpio::GPIO<'static>,
+    gpio: &'static capsules::gpio::GPIO<'static, sam4l::gpio::GPIOPin<'static>>,
     alarm: &'static capsules::alarm::AlarmDriver<
         'static,
         VirtualMuxAlarm<'static, sam4l::ast::Ast<'static>>,
@@ -60,11 +58,14 @@ struct Hail {
     temp: &'static capsules::temperature::TemperatureSensor<'static>,
     ninedof: &'static capsules::ninedof::NineDof<'static>,
     humidity: &'static capsules::humidity::HumiditySensor<'static>,
-    spi: &'static capsules::spi::Spi<'static, VirtualSpiMasterDevice<'static, sam4l::spi::SpiHw>>,
+    spi: &'static capsules::spi_controller::Spi<
+        'static,
+        VirtualSpiMasterDevice<'static, sam4l::spi::SpiHw>,
+    >,
     nrf51822: &'static capsules::nrf51822_serialization::Nrf51822Serialization<'static>,
     adc: &'static capsules::adc::Adc<'static, sam4l::adc::Adc>,
-    led: &'static capsules::led::LED<'static>,
-    button: &'static capsules::button::Button<'static>,
+    led: &'static capsules::led::LED<'static, sam4l::gpio::GPIOPin<'static>>,
+    button: &'static capsules::button::Button<'static, sam4l::gpio::GPIOPin<'static>>,
     rng: &'static capsules::rng::RngDriver<'static>,
     ipc: kernel::ipc::IPC,
     crc: &'static capsules::crc::Crc<'static, sam4l::crccu::Crccu<'static>>,
@@ -82,7 +83,7 @@ impl Platform for Hail {
             capsules::gpio::DRIVER_NUM => f(Some(self.gpio)),
 
             capsules::alarm::DRIVER_NUM => f(Some(self.alarm)),
-            capsules::spi::DRIVER_NUM => f(Some(self.spi)),
+            capsules::spi_controller::DRIVER_NUM => f(Some(self.spi)),
             capsules::nrf51822_serialization::DRIVER_NUM => f(Some(self.nrf51822)),
             capsules::ambient_light::DRIVER_NUM => f(Some(self.ambient_light)),
             capsules::adc::DRIVER_NUM => f(Some(self.adc)),
@@ -203,6 +204,7 @@ pub unsafe fn reset_handler() {
     );
 
     let chip = static_init!(sam4l::chip::Sam4l, sam4l::chip::Sam4l::new());
+    CHIP = Some(chip);
 
     let dynamic_deferred_call_clients =
         static_init!([DynamicDeferredCallClientState; 2], Default::default());
@@ -238,22 +240,29 @@ pub unsafe fn reset_handler() {
     sam4l::usart::USART3.set_mode(sam4l::usart::UsartMode::Uart);
     // Create the Nrf51822Serialization driver for passing BLE commands
     // over UART to the nRF51822 radio.
-    let nrf_serialization =
-        components::nrf51822::Nrf51822Component::new(&sam4l::usart::USART3, &sam4l::gpio::PA[17])
-            .finalize(());
+    let nrf_serialization = components::nrf51822::Nrf51822Component::new(
+        &sam4l::usart::USART3,
+        &sam4l::gpio::PA[17],
+        board_kernel,
+    )
+    .finalize(());
 
     let ast = &sam4l::ast::AST;
     let mux_alarm = components::alarm::AlarmMuxComponent::new(ast)
         .finalize(components::alarm_mux_component_helper!(sam4l::ast::Ast));
     ast.configure(mux_alarm);
 
-    let sensors_i2c = static_init!(MuxI2C<'static>, MuxI2C::new(&sam4l::i2c::I2C1));
+    let sensors_i2c = static_init!(
+        MuxI2C<'static>,
+        MuxI2C::new(&sam4l::i2c::I2C1, None, dynamic_deferred_caller)
+    );
     sam4l::i2c::I2C1.set_master_client(sensors_i2c);
 
     // SI7021 Temperature / Humidity Sensor, address: 0x40
     let si7021 = components::si7021::SI7021Component::new(sensors_i2c, mux_alarm, 0x40)
         .finalize(components::si7021_component_helper!(sam4l::ast::Ast));
-    let temp = components::si7021::TemperatureComponent::new(board_kernel, si7021).finalize(());
+    let temp =
+        components::temperature::TemperatureComponent::new(board_kernel, si7021).finalize(());
     let humidity = components::si7021::HumidityComponent::new(board_kernel, si7021).finalize(());
 
     // Configure the ISL29035, device address 0x44
@@ -278,14 +287,8 @@ pub unsafe fn reset_handler() {
     fxos8700_i2c.set_client(fxos8700);
     sam4l::gpio::PA[9].set_client(fxos8700);
 
-    let ninedof = static_init!(
-        capsules::ninedof::NineDof<'static>,
-        capsules::ninedof::NineDof::new(
-            fxos8700,
-            board_kernel.create_grant(&memory_allocation_capability)
-        )
-    );
-    hil::sensors::NineDof::set_client(fxos8700, ninedof);
+    let ninedof = components::ninedof::NineDofComponent::new(board_kernel)
+        .finalize(components::ninedof_component_helper!(fxos8700));
 
     // SPI
     // Set up a SPI MUX, so there can be multiple clients.
@@ -296,29 +299,36 @@ pub unsafe fn reset_handler() {
         .finalize(components::spi_syscall_component_helper!(sam4l::spi::SpiHw));
 
     // LEDs
-    let led = components::led::LedsComponent::new().finalize(components::led_component_helper!(
+    let led = components::led::LedsComponent::new(components::led_component_helper!(
+        sam4l::gpio::GPIOPin,
         (
             &sam4l::gpio::PA[13],
-            capsules::led::ActivationMode::ActiveLow
+            kernel::hil::gpio::ActivationMode::ActiveLow
         ), // Red
         (
             &sam4l::gpio::PA[15],
-            capsules::led::ActivationMode::ActiveLow
+            kernel::hil::gpio::ActivationMode::ActiveLow
         ), // Green
         (
             &sam4l::gpio::PA[14],
-            capsules::led::ActivationMode::ActiveLow
+            kernel::hil::gpio::ActivationMode::ActiveLow
         ) // Blue
-    ));
+    ))
+    .finalize(components::led_component_buf!(sam4l::gpio::GPIOPin));
 
     // BUTTONs
-    let button = components::button::ButtonComponent::new(board_kernel).finalize(
-        components::button_component_helper!((
-            &sam4l::gpio::PA[16],
-            capsules::button::GpioMode::LowWhenPressed,
-            kernel::hil::gpio::FloatingState::PullNone
-        )),
-    );
+    let button = components::button::ButtonComponent::new(
+        board_kernel,
+        components::button_component_helper!(
+            sam4l::gpio::GPIOPin,
+            (
+                &sam4l::gpio::PA[16],
+                kernel::hil::gpio::ActivationMode::ActiveLow,
+                kernel::hil::gpio::FloatingState::PullNone
+            )
+        ),
+    )
+    .finalize(components::button_component_buf!(sam4l::gpio::GPIOPin));
 
     // Setup ADC
     let adc_channels = static_init!(
@@ -349,14 +359,17 @@ pub unsafe fn reset_handler() {
     let rng = components::rng::RngComponent::new(board_kernel, &sam4l::trng::TRNG).finalize(());
 
     // set GPIO driver controlling remaining GPIO pins
-    let gpio = components::gpio::GpioComponent::new(board_kernel).finalize(
+    let gpio = components::gpio::GpioComponent::new(
+        board_kernel,
         components::gpio_component_helper!(
-            &sam4l::gpio::PC[14], // DO
-            &sam4l::gpio::PC[15], // D1
-            &sam4l::gpio::PC[11], // D6
-            &sam4l::gpio::PC[12]  // D7
+            sam4l::gpio::GPIOPin,
+            0 => &sam4l::gpio::PC[14], // D0
+            1 => &sam4l::gpio::PC[15], // D1
+            2 => &sam4l::gpio::PC[11], // D6
+            3 => &sam4l::gpio::PC[12]  // D7
         ),
-    );
+    )
+    .finalize(components::gpio_component_buf!(sam4l::gpio::GPIOPin));
 
     // CRC
     let crc = components::crc::CrcComponent::new(board_kernel, &sam4l::crccu::CRCCU)
@@ -388,6 +401,13 @@ pub unsafe fn reset_handler() {
     // );
     // sam4l::gpio::PA[16].set_client(debug_process_restart);
 
+    // Configure application fault policy
+    let restart_policy = static_init!(
+        kernel::procs::ThresholdRestartThenPanic,
+        kernel::procs::ThresholdRestartThenPanic::new(4)
+    );
+    let fault_response = kernel::procs::FaultResponse::Restart(restart_policy);
+
     let hail = Hail {
         console: console,
         gpio: gpio,
@@ -407,8 +427,7 @@ pub unsafe fn reset_handler() {
         dac: dac,
     };
 
-    // Reset the nRF and setup the UART bus.
-    hail.nrf51822.reset();
+    // Setup the UART bus for nRF51 serialization..
     hail.nrf51822.initialize();
 
     process_console.start();
@@ -416,23 +435,47 @@ pub unsafe fn reset_handler() {
     // Uncomment to measure overheads for TakeCell and MapCell:
     // test_take_map_cell::test_take_map_cell();
 
-    debug!("Initialization complete. Entering main loop");
+    debug!("Initialization complete. Entering main loop.");
 
+    /// These symbols are defined in the linker script.
     extern "C" {
         /// Beginning of the ROM region containing app images.
-        ///
-        /// This symbol is defined in the linker script.
         static _sapps: u8;
+        /// End of the ROM region containing app images.
+        static _eapps: u8;
+        /// Beginning of the RAM region for app memory.
+        static mut _sappmem: u8;
+        /// End of the RAM region for app memory.
+        static _eappmem: u8;
     }
 
     kernel::procs::load_processes(
         board_kernel,
         chip,
-        &_sapps as *const u8,
-        &mut APP_MEMORY,
+        core::slice::from_raw_parts(
+            &_sapps as *const u8,
+            &_eapps as *const u8 as usize - &_sapps as *const u8 as usize,
+        ),
+        core::slice::from_raw_parts_mut(
+            &mut _sappmem as *mut u8,
+            &_eappmem as *const u8 as usize - &_sappmem as *const u8 as usize,
+        ),
         &mut PROCESSES,
-        FAULT_RESPONSE,
+        fault_response,
         &process_management_capability,
+    )
+    .unwrap_or_else(|err| {
+        debug!("Error loading processes!");
+        debug!("{:?}", err);
+    });
+
+    let scheduler = components::sched::round_robin::RoundRobinComponent::new(&PROCESSES)
+        .finalize(components::rr_component_helper!(NUM_PROCS));
+    board_kernel.kernel_loop(
+        &hail,
+        chip,
+        Some(&hail.ipc),
+        scheduler,
+        &main_loop_capability,
     );
-    board_kernel.kernel_loop(&hail, chip, Some(&hail.ipc), &main_loop_capability);
 }

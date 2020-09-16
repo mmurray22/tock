@@ -39,18 +39,36 @@ pub enum Configuration {
     Other,
 }
 
+/// Some GPIOs can be semantically active or not.
+/// For example:
+/// - a LED is active when emitting light,
+/// - a button GPIO is active when pressed.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum ActivationState {
+    Inactive = 0,
+    Active = 1,
+}
+
+/// Whether a GPIO is in the `ActivationState::Active` when the signal is high
+/// or low.
+#[derive(Clone, Copy)]
+pub enum ActivationMode {
+    ActiveHigh,
+    ActiveLow,
+}
+
 /// The Pin trait allows a pin to be used as either input
 /// or output and to be configured.
 pub trait Pin: Input + Output + Configure {}
 
 /// The InterruptPin trait allows a pin to be used as either
 /// input or output and also to source interrupts.
-pub trait InterruptPin: Pin + Interrupt {}
+pub trait InterruptPin<'a>: Pin + Interrupt<'a> {}
 
 /// The InterruptValuePin trait allows a pin to be used as
 /// either input or output and also to source interrupts which
 /// pass a value.
-pub trait InterruptValuePin: Pin + InterruptWithValue {}
+pub trait InterruptValuePin<'a>: Pin + InterruptWithValue<'a> {}
 /// Control and configure a GPIO pin.
 pub trait Configure {
     /// Return the current pin configuration.
@@ -130,6 +148,20 @@ pub trait Output {
     /// input/output, this call is ignored. Return the new value
     /// of the pin.
     fn toggle(&self) -> bool;
+
+    /// Activate or deactivate a GPIO pin, for a given activation mode.
+    fn write_activation(&self, state: ActivationState, mode: ActivationMode) {
+        match (state, mode) {
+            (ActivationState::Active, ActivationMode::ActiveHigh)
+            | (ActivationState::Inactive, ActivationMode::ActiveLow) => {
+                self.set();
+            }
+            (ActivationState::Active, ActivationMode::ActiveLow)
+            | (ActivationState::Inactive, ActivationMode::ActiveHigh) => {
+                self.clear();
+            }
+        }
+    }
 }
 
 pub trait Input {
@@ -137,11 +169,24 @@ pub trait Input {
     /// pin, return the output; for an input pin, return the input;
     /// for disabled or function pins the value is undefined.
     fn read(&self) -> bool;
+
+    /// Get the current state of a GPIO pin, for a given activation mode.
+    fn read_activation(&self, mode: ActivationMode) -> ActivationState {
+        let value = self.read();
+        match (mode, value) {
+            (ActivationMode::ActiveHigh, true) | (ActivationMode::ActiveLow, false) => {
+                ActivationState::Active
+            }
+            (ActivationMode::ActiveLow, true) | (ActivationMode::ActiveHigh, false) => {
+                ActivationState::Inactive
+            }
+        }
+    }
 }
 
-pub trait Interrupt: Input {
+pub trait Interrupt<'a>: Input {
     /// Set the client for interrupt events.
-    fn set_client(&self, client: &'static dyn Client);
+    fn set_client(&self, client: &'a dyn Client);
 
     /// Enable an interrupt on the GPIO pin. This does not
     /// configure the pin except to enable an interrupt: it
@@ -170,9 +215,9 @@ pub trait Client {
 /// interrupts call the same callback function and it needs to
 /// distinguish which one is calling it by giving each one a unique
 /// value.
-pub trait InterruptWithValue: Input {
+pub trait InterruptWithValue<'a>: Input {
     /// Set the client for interrupt events.
-    fn set_client(&self, client: &'static dyn ClientWithValue);
+    fn set_client(&self, client: &'a dyn ClientWithValue);
 
     /// Enable an interrupt on the GPIO pin. This does not
     /// configure the pin except to enable an interrupt: it
@@ -209,15 +254,15 @@ pub trait ClientWithValue {
 /// Standard implementation of InterruptWithValue: handles an
 /// `gpio::Client::fired` and passes it up as a
 /// `gpio::ClientWithValue::fired`.
-pub struct InterruptValueWrapper {
+pub struct InterruptValueWrapper<'a, IP: InterruptPin<'a>> {
     value: Cell<u32>,
-    client: OptionalCell<&'static dyn ClientWithValue>,
-    source: &'static dyn InterruptPin,
+    client: OptionalCell<&'a dyn ClientWithValue>,
+    source: &'a IP,
 }
 
-impl InterruptValueWrapper {
-    pub fn new(pin: &'static dyn InterruptPin) -> InterruptValueWrapper {
-        InterruptValueWrapper {
+impl<'a, IP: InterruptPin<'a>> InterruptValueWrapper<'a, IP> {
+    pub fn new(pin: &'a IP) -> Self {
+        Self {
             value: Cell::new(0),
             client: OptionalCell::empty(),
             source: pin,
@@ -230,7 +275,7 @@ impl InterruptValueWrapper {
     }
 }
 
-impl InterruptWithValue for InterruptValueWrapper {
+impl<'a, IP: InterruptPin<'a>> InterruptWithValue<'a> for InterruptValueWrapper<'a, IP> {
     fn set_value(&self, value: u32) {
         self.value.set(value);
     }
@@ -239,7 +284,7 @@ impl InterruptWithValue for InterruptValueWrapper {
         self.value.get()
     }
 
-    fn set_client(&self, client: &'static dyn ClientWithValue) {
+    fn set_client(&self, client: &'a dyn ClientWithValue) {
         self.client.replace(client);
     }
 
@@ -257,13 +302,13 @@ impl InterruptWithValue for InterruptValueWrapper {
     }
 }
 
-impl Input for InterruptValueWrapper {
+impl<'a, IP: InterruptPin<'a>> Input for InterruptValueWrapper<'a, IP> {
     fn read(&self) -> bool {
         self.source.read()
     }
 }
 
-impl Configure for InterruptValueWrapper {
+impl<'a, IP: InterruptPin<'a>> Configure for InterruptValueWrapper<'a, IP> {
     fn configuration(&self) -> Configuration {
         self.source.configuration()
     }
@@ -305,7 +350,7 @@ impl Configure for InterruptValueWrapper {
     }
 }
 
-impl Output for InterruptValueWrapper {
+impl<'a, IP: InterruptPin<'a>> Output for InterruptValueWrapper<'a, IP> {
     fn set(&self) {
         self.source.set();
     }
@@ -319,10 +364,10 @@ impl Output for InterruptValueWrapper {
     }
 }
 
-impl InterruptValuePin for InterruptValueWrapper {}
-impl Pin for InterruptValueWrapper {}
+impl<'a, IP: InterruptPin<'a>> InterruptValuePin<'a> for InterruptValueWrapper<'a, IP> {}
+impl<'a, IP: InterruptPin<'a>> Pin for InterruptValueWrapper<'a, IP> {}
 
-impl Client for InterruptValueWrapper {
+impl<'a, IP: InterruptPin<'a>> Client for InterruptValueWrapper<'a, IP> {
     fn fired(&self) {
         self.client.map(|c| c.fired(self.value()));
     }

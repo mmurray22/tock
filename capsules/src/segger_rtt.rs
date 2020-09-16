@@ -5,18 +5,22 @@
 //! the host uses a JTAG connection to read the messages out of the chip's
 //! memory.
 //!
-//!	Receiving RTT Messages
-//!	----------------------
+//! Receiving RTT Messages
+//! ----------------------
 //!
-//!	With the jlink tools, reciving RTT messages is a two step process. First,
-//!	open a JTAG connection with a command like:
+//! With the jlink tools, reciving RTT messages is a two step process. First,
+//! open a JTAG connection with a command like:
 //!
-//!         $ JLinkExe -device nrf52 -if swd -speed 1000 -autoconnect 1
+//! ```shell
+//! $ JLinkExe -device nrf52 -if swd -speed 1000 -autoconnect 1
+//! ```
 //!
-//!	Then, use the `JLinkRTTClient` tool in a different terminal to print the
-//!	messages:
+//! Then, use the `JLinkRTTClient` tool in a different terminal to print the
+//! messages:
 //!
-//!         $ JLinkRTTClient
+//! ```shell
+//! $ JLinkRTTClient
+//! ```
 //!
 //! Notes
 //! -----
@@ -34,25 +38,22 @@
 //! Usage
 //! -----
 //!
-//! ```
+//! ```rust
 //! pub struct Platform {
 //!     // Other fields omitted for clarity
-//!     console: &'static capsules::console::Console<
-//!         'static,
-//!         capsules::segger_rtt::SeggerRtt<
-//!             'static,
-//!             capsules::virtual_alarm::VirtualMuxAlarm<'static, nrf5x::rtc::Rtc>,
-//!         >,
-//!     >,
+//!     console: &'static capsules::console::Console<'static>,
 //! }
 //! ```
 //!
 //! In `reset_handler()`:
 //!
-//! ```
+//! ```rust
+//! # use kernel::static_init;
+//! # use capsules::virtual_alarm::VirtualMuxAlarm;
+//!
 //! let virtual_alarm_rtt = static_init!(
-//!     capsules::virtual_alarm::VirtualMuxAlarm<'static, nrf5x::rtc::Rtc>,
-//!     capsules::virtual_alarm::VirtualMuxAlarm::new(mux_alarm)
+//!     VirtualMuxAlarm<'static, nrf5x::rtc::Rtc>,
+//!     VirtualMuxAlarm::new(mux_alarm)
 //! );
 //!
 //! let rtt_memory = static_init!(
@@ -72,18 +73,12 @@
 //! virtual_alarm_rtt.set_client(rtt);
 //!
 //! let console = static_init!(
-//!     capsules::console::Console<
-//!         'static,
-//!         capsules::segger_rtt::SeggerRtt<
-//!             capsules::virtual_alarm::VirtualMuxAlarm<'static, nrf5x::rtc::Rtc>,
-//!         >,
-//!     >,
+//!     capsules::console::Console<'static>,
 //!     capsules::console::Console::new(
 //!         rtt,
-//!         0, // Baud rate is meaningless with RTT
 //!         &mut capsules::console::WRITE_BUF,
 //!         &mut capsules::console::READ_BUF,
-//!         kernel::Grant::create()
+//!         board_kernel.create_grant(&grant_cap)
 //!     )
 //! );
 //! kernel::hil::uart::UART::set_client(rtt, console);
@@ -91,77 +86,97 @@
 //! ```
 
 use core::cell::Cell;
-use kernel::common::cells::{OptionalCell, TakeCell};
+use core::marker::PhantomData;
+use kernel::common::cells::{OptionalCell, TakeCell, VolatileCell};
 use kernel::hil;
 use kernel::hil::time::Frequency;
 use kernel::hil::uart;
 use kernel::ReturnCode;
 
-/// Buffer for transmitting to the host.
-pub static mut UP_BUFFER: [u8; 1024] = [0; 1024];
+/// Suggested length for the up buffer to pass to the Segger RTT capsule.
+pub const DEFAULT_UP_BUFFER_LENGTH: usize = 1024;
 
-/// Buffer for receiving messages from the host.
-pub static mut DOWN_BUFFER: [u8; 32] = [0; 32];
+/// Suggested length for the down buffer to pass to the Segger RTT capsule.
+pub const DEFAULT_DOWN_BUFFER_LENGTH: usize = 32;
 
 /// This structure is defined by the segger RTT protocol. It must exist in
 /// memory in exactly this form so that the segger JTAG tool can find it in the
 /// chip's memory and read and write messages to the appropriate buffers.
 #[repr(C)]
-pub struct SeggerRttMemory {
-    id: [u8; 16],
-    number_up_buffers: u32,
-    number_down_buffers: u32,
-    up_buffer: SeggerRttBuffer,
-    down_buffer: SeggerRttBuffer,
+pub struct SeggerRttMemory<'a> {
+    id: VolatileCell<[u8; 16]>,
+    number_up_buffers: VolatileCell<u32>,
+    number_down_buffers: VolatileCell<u32>,
+    up_buffer: SeggerRttBuffer<'a>,
+    down_buffer: SeggerRttBuffer<'a>,
 }
 
 #[repr(C)]
-pub struct SeggerRttBuffer {
-    name: *const u8, // Pointer to the name of this channel. Must be a 4 byte thin pointer.
-    buffer: *const u8, // Pointer to the buffer for this channel.
-    length: u32,
-    write_position: u32,
-    read_position: u32,
-    flags: u32,
+pub struct SeggerRttBuffer<'a> {
+    name: VolatileCell<*const u8>, // Pointer to the name of this channel. Must be a 4 byte thin pointer.
+    // These fields are marked as `pub` to allow access in the panic handler.
+    pub buffer: VolatileCell<*const u8>, // Pointer to the buffer for this channel.
+    pub length: VolatileCell<u32>,
+    pub write_position: VolatileCell<u32>,
+    read_position: VolatileCell<u32>,
+    flags: VolatileCell<u32>,
+    _lifetime: PhantomData<&'a [u8]>,
 }
 
-impl SeggerRttMemory {
-    pub fn new(
+impl<'a> SeggerRttMemory<'a> {
+    pub fn new_raw(
         up_buffer_name: &'a [u8],
-        up_buffer: &'static mut [u8],
-        down_buffer_name: &'static [u8],
-        down_buffer: &'static mut [u8],
-    ) -> SeggerRttMemory {
+        up_buffer_ptr: *const u8,
+        up_buffer_len: usize,
+        down_buffer_name: &'a [u8],
+        down_buffer_ptr: *const u8,
+        down_buffer_len: usize,
+    ) -> SeggerRttMemory<'a> {
         SeggerRttMemory {
-            // Must be "SEGGER RTT".
-            id: *b"SEGGER RTT\0\0\0\0\0\0",
-            number_up_buffers: 1,
-            number_down_buffers: 1,
+            // This field is a magic value that must be set to "SEGGER RTT" for the debugger to
+            // recognize it when scanning the memory.
+            //
+            // In principle, there could be a risk that the value is duplicated elsewhere in
+            // memory, therefore confusing the debugger. However in practice this hasn't caused any
+            // known problem so far. If needed, this ID could be scrambled here, with the real magic
+            // value being written only when this object is fully initialized.
+            id: VolatileCell::new(*b"SEGGER RTT\0\0\0\0\0\0"),
+            number_up_buffers: VolatileCell::new(1),
+            number_down_buffers: VolatileCell::new(1),
             up_buffer: SeggerRttBuffer {
-                name: up_buffer_name.as_ptr(),
-                buffer: up_buffer.as_ptr(),
-                length: 1024,
-                write_position: 0,
-                read_position: 0,
-                flags: 0,
+                name: VolatileCell::new(up_buffer_name.as_ptr()),
+                buffer: VolatileCell::new(up_buffer_ptr),
+                length: VolatileCell::new(up_buffer_len as u32),
+                write_position: VolatileCell::new(0),
+                read_position: VolatileCell::new(0),
+                flags: VolatileCell::new(0),
+                _lifetime: PhantomData,
             },
             down_buffer: SeggerRttBuffer {
-                name: down_buffer_name.as_ptr(),
-                buffer: down_buffer.as_ptr(),
-                length: 32,
-                write_position: 0,
-                read_position: 0,
-                flags: 0,
+                name: VolatileCell::new(down_buffer_name.as_ptr()),
+                buffer: VolatileCell::new(down_buffer_ptr),
+                length: VolatileCell::new(down_buffer_len as u32),
+                write_position: VolatileCell::new(0),
+                read_position: VolatileCell::new(0),
+                flags: VolatileCell::new(0),
+                _lifetime: PhantomData,
             },
         }
+    }
+
+    /// This getter allows access to the underlying buffer in the panic handler.
+    /// The result is a pointer so that only `unsafe` code can actually dereference it - this is to
+    /// restrict this priviledged access to the panic handler.
+    pub fn get_up_buffer_ptr(&self) -> *const SeggerRttBuffer<'a> {
+        &self.up_buffer
     }
 }
 
 pub struct SeggerRtt<'a, A: hil::time::Alarm<'a>> {
     alarm: &'a A, // Dummy alarm so we can get a callback.
-    config: TakeCell<'a, SeggerRttMemory>,
-    up_buffer: TakeCell<'static, [u8]>,
-    _down_buffer: TakeCell<'static, [u8]>,
+    config: TakeCell<'a, SeggerRttMemory<'a>>,
+    up_buffer: TakeCell<'a, [u8]>,
+    _down_buffer: TakeCell<'a, [u8]>,
     client: OptionalCell<&'a dyn uart::TransmitClient>,
     client_buffer: TakeCell<'static, [u8]>,
     tx_len: Cell<usize>,
@@ -170,9 +185,9 @@ pub struct SeggerRtt<'a, A: hil::time::Alarm<'a>> {
 impl<'a, A: hil::time::Alarm<'a>> SeggerRtt<'a, A> {
     pub fn new(
         alarm: &'a A,
-        config: &'a mut SeggerRttMemory,
-        up_buffer: &'static mut [u8],
-        down_buffer: &'static mut [u8],
+        config: &'a mut SeggerRttMemory<'a>,
+        up_buffer: &'a mut [u8],
+        down_buffer: &'a mut [u8],
     ) -> SeggerRtt<'a, A> {
         SeggerRtt {
             alarm: alarm,
@@ -205,22 +220,27 @@ impl<'a, A: hil::time::Alarm<'a>> uart::Transmit<'a> for SeggerRtt<'a, A> {
                     // Copy the incoming data into the buffer. Once we increment
                     // the `write_position` the RTT listener will go ahead and read
                     // the message from us.
-                    let mut index = config.up_buffer.write_position as usize;
-                    let buffer_len = config.up_buffer.length as usize;
+                    let mut index = config.up_buffer.write_position.get() as usize;
+                    let buffer_len = config.up_buffer.length.get() as usize;
 
                     for i in 0..tx_len {
                         buffer[(i + index) % buffer_len] = tx_data[i];
                     }
 
                     index = (index + tx_len) % buffer_len;
-                    config.up_buffer.write_position = index as u32;
+                    config.up_buffer.write_position.set(index as u32);
                     self.tx_len.set(tx_len);
                     // Save the client buffer so we can pass it back with the callback.
                     self.client_buffer.replace(tx_data);
 
-                    // Start a short timer so that we get a callback and
-                    // can issue the callback to the client.
-                    let interval = (100 as u32) * <A::Frequency>::frequency() / 1000000;
+                    // Start a short timer so that we get a callback and can issue the callback to
+                    // the client.
+                    //
+                    // This heuristic interval was tested with the console capsule on a nRF52840-DK
+                    // board, passing buffers up to 1500 bytes from userspace. 100 micro-seconds
+                    // was too short, even for buffers as small as 128 bytes. 1 milli-second seems to
+                    // be reliable.
+                    let interval = (1000 as u32) * <A::Frequency>::frequency() / 1000000;
                     let tics = self.alarm.now().wrapping_add(interval);
                     self.alarm.set_alarm(tics);
                 })
@@ -240,7 +260,7 @@ impl<'a, A: hil::time::Alarm<'a>> uart::Transmit<'a> for SeggerRtt<'a, A> {
     }
 }
 
-impl<A: hil::time::Alarm<'a>> hil::time::AlarmClient for SeggerRtt<'a, A> {
+impl<'a, A: hil::time::Alarm<'a>> hil::time::AlarmClient for SeggerRtt<'a, A> {
     fn fired(&self) {
         self.client.map(|client| {
             self.client_buffer.take().map(|buffer| {

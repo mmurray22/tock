@@ -1,11 +1,14 @@
 //! Implementations for generic LowRISC peripherals.
 
-#![feature(asm, concat_idents, const_fn, core_intrinsics)]
-#![feature(in_band_lifetimes)]
-#![feature(exclusive_range_pattern)]
+#![feature(const_fn)]
 #![no_std]
 #![crate_name = "lowrisc"]
 #![crate_type = "rlib"]
 
 pub mod gpio;
+pub mod hmac;
+pub mod i2c;
+pub mod padctrl;
+pub mod pwrmgr;
 pub mod uart;
+pub mod usbdev;

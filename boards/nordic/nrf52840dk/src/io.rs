@@ -7,13 +7,28 @@ use kernel::hil::led;
 use kernel::hil::uart::{self, Configure};
 use nrf52840::gpio::Pin;
 
+use crate::CHIP;
 use crate::PROCESSES;
 
-struct Writer {
-    initialized: bool,
+enum Writer {
+    WriterUart(/* initialized */ bool),
+    WriterRtt(&'static capsules::segger_rtt::SeggerRttMemory<'static>),
 }
 
-static mut WRITER: Writer = Writer { initialized: false };
+static mut WRITER: Writer = Writer::WriterUart(false);
+
+fn wait() {
+    for _ in 0..100 {
+        cortexm4::support::nop();
+    }
+}
+
+/// Set the RTT memory buffer used to output panic messages.
+pub unsafe fn set_rtt_memory(
+    rtt_memory: &'static mut capsules::segger_rtt::SeggerRttMemory<'static>,
+) {
+    WRITER = Writer::WriterRtt(rtt_memory);
+}
 
 impl Write for Writer {
     fn write_str(&mut self, s: &str) -> ::core::fmt::Result {
@@ -24,23 +39,46 @@ impl Write for Writer {
 
 impl IoWrite for Writer {
     fn write(&mut self, buf: &[u8]) {
-        let uart = unsafe { &mut nrf52840::uart::UARTE0 };
-        if !self.initialized {
-            self.initialized = true;
-            uart.configure(uart::Parameters {
-                baud_rate: 115200,
-                stop_bits: uart::StopBits::One,
-                parity: uart::Parity::None,
-                hw_flow_control: false,
-                width: uart::Width::Eight,
-            });
-        }
-        for &c in buf {
-            unsafe {
-                uart.send_byte(c);
+        match self {
+            Writer::WriterUart(ref mut initialized) => {
+                let uart = unsafe { &mut nrf52840::uart::UARTE0 };
+                if !*initialized {
+                    *initialized = true;
+                    uart.configure(uart::Parameters {
+                        baud_rate: 115200,
+                        stop_bits: uart::StopBits::One,
+                        parity: uart::Parity::None,
+                        hw_flow_control: false,
+                        width: uart::Width::Eight,
+                    });
+                }
+                for &c in buf {
+                    unsafe {
+                        uart.send_byte(c);
+                    }
+                    while !uart.tx_ready() {}
+                }
             }
-            while !uart.tx_ready() {}
-        }
+            Writer::WriterRtt(rtt_memory) => {
+                let up_buffer = unsafe { &*rtt_memory.get_up_buffer_ptr() };
+                let buffer_len = up_buffer.length.get();
+                let buffer = unsafe {
+                    core::slice::from_raw_parts_mut(
+                        up_buffer.buffer.get() as *mut u8,
+                        buffer_len as usize,
+                    )
+                };
+
+                let mut write_position = up_buffer.write_position.get();
+
+                for &c in buf {
+                    buffer[write_position as usize] = c;
+                    write_position = (write_position + 1) % buffer_len;
+                    up_buffer.write_position.set(write_position);
+                    wait();
+                }
+            }
+        };
     }
 }
 
@@ -53,5 +91,12 @@ pub unsafe extern "C" fn panic_fmt(pi: &PanicInfo) -> ! {
     const LED1_PIN: Pin = Pin::P0_13;
     let led = &mut led::LedLow::new(&mut nrf52840::gpio::PORT[LED1_PIN]);
     let writer = &mut WRITER;
-    debug::panic(&mut [led], writer, pi, &cortexm4::support::nop, &PROCESSES)
+    debug::panic(
+        &mut [led],
+        writer,
+        pi,
+        &cortexm4::support::nop,
+        &PROCESSES,
+        &CHIP,
+    )
 }

@@ -25,20 +25,20 @@
 // Author: Philip Levis <pal@cs.stanford.edu>
 // Last modified: 6/20/2018
 
-#![allow(dead_code)] // Components are intended to be conditionally included
-
 use core::mem::MaybeUninit;
 
-use capsules::spi::Spi;
+use capsules::spi_controller::{Spi, DEFAULT_READ_BUF_LENGTH, DEFAULT_WRITE_BUF_LENGTH};
+use capsules::spi_peripheral::SpiPeripheral;
 use capsules::virtual_spi::{MuxSpiMaster, VirtualSpiMasterDevice};
 use kernel::component::Component;
 use kernel::hil::spi;
-use kernel::static_init_half;
+use kernel::{static_init, static_init_half};
 
 // Setup static space for the objects.
 #[macro_export]
 macro_rules! spi_mux_component_helper {
     ($S:ty) => {{
+        use capsules::virtual_spi::MuxSpiMaster;
         use core::mem::MaybeUninit;
         static mut BUF: MaybeUninit<MuxSpiMaster<'static, $S>> = MaybeUninit::uninit();
         &mut BUF
@@ -48,7 +48,8 @@ macro_rules! spi_mux_component_helper {
 #[macro_export]
 macro_rules! spi_syscall_component_helper {
     ($S:ty) => {{
-        use capsules::spi::Spi;
+        use capsules::spi_controller::Spi;
+        use capsules::virtual_spi::VirtualSpiMasterDevice;
         use core::mem::MaybeUninit;
         static mut BUF1: MaybeUninit<VirtualSpiMasterDevice<'static, $S>> = MaybeUninit::uninit();
         static mut BUF2: MaybeUninit<Spi<'static, VirtualSpiMasterDevice<'static, $S>>> =
@@ -60,8 +61,19 @@ macro_rules! spi_syscall_component_helper {
 #[macro_export]
 macro_rules! spi_component_helper {
     ($S:ty) => {{
+        use capsules::virtual_spi::VirtualSpiMasterDevice;
         use core::mem::MaybeUninit;
         static mut BUF: MaybeUninit<VirtualSpiMasterDevice<'static, $S>> = MaybeUninit::uninit();
+        &mut BUF
+    };};
+}
+
+#[macro_export]
+macro_rules! spi_peripheral_component_helper {
+    ($S:ty) => {{
+        use capsules::spi_peripheral::SpiPeripheral;
+        use core::mem::MaybeUninit;
+        static mut BUF: MaybeUninit<SpiPeripheral<'static, $S>> = MaybeUninit::uninit();
         &mut BUF
     };};
 }
@@ -90,7 +102,7 @@ impl<S: 'static + spi::SpiMaster> Component for SpiMuxComponent<S> {
     type StaticInput = &'static mut MaybeUninit<MuxSpiMaster<'static, S>>;
     type Output = &'static MuxSpiMaster<'static, S>;
 
-    unsafe fn finalize(&mut self, static_buffer: Self::StaticInput) -> Self::Output {
+    unsafe fn finalize(self, static_buffer: Self::StaticInput) -> Self::Output {
         let mux_spi = static_init_half!(
             static_buffer,
             MuxSpiMaster<'static, S>,
@@ -120,7 +132,7 @@ impl<S: 'static + spi::SpiMaster> Component for SpiSyscallComponent<S> {
     );
     type Output = &'static Spi<'static, VirtualSpiMasterDevice<'static, S>>;
 
-    unsafe fn finalize(&mut self, static_buffer: Self::StaticInput) -> Self::Output {
+    unsafe fn finalize(self, static_buffer: Self::StaticInput) -> Self::Output {
         let syscall_spi_device = static_init_half!(
             static_buffer.0,
             VirtualSpiMasterDevice<'static, S>,
@@ -133,10 +145,15 @@ impl<S: 'static + spi::SpiMaster> Component for SpiSyscallComponent<S> {
             Spi::new(syscall_spi_device)
         );
 
-        static mut SPI_READ_BUF: [u8; 1024] = [0; 1024];
-        static mut SPI_WRITE_BUF: [u8; 1024] = [0; 1024];
+        let spi_read_buf =
+            static_init!([u8; DEFAULT_READ_BUF_LENGTH], [0; DEFAULT_READ_BUF_LENGTH]);
 
-        spi_syscalls.config_buffers(&mut SPI_READ_BUF, &mut SPI_WRITE_BUF);
+        let spi_write_buf = static_init!(
+            [u8; DEFAULT_WRITE_BUF_LENGTH],
+            [0; DEFAULT_WRITE_BUF_LENGTH]
+        );
+
+        spi_syscalls.config_buffers(spi_read_buf, spi_write_buf);
         syscall_spi_device.set_client(spi_syscalls);
 
         spi_syscalls
@@ -156,11 +173,38 @@ impl<S: 'static + spi::SpiMaster> Component for SpiComponent<S> {
     type StaticInput = &'static mut MaybeUninit<VirtualSpiMasterDevice<'static, S>>;
     type Output = &'static VirtualSpiMasterDevice<'static, S>;
 
-    unsafe fn finalize(&mut self, static_buffer: Self::StaticInput) -> Self::Output {
+    unsafe fn finalize(self, static_buffer: Self::StaticInput) -> Self::Output {
         let spi_device = static_init_half!(
             static_buffer,
             VirtualSpiMasterDevice<'static, S>,
             VirtualSpiMasterDevice::new(self.spi_mux, self.chip_select)
+        );
+
+        spi_device
+    }
+}
+
+pub struct SpiPeripheralComponent<S: 'static + spi::SpiSlave> {
+    device: &'static S,
+}
+
+impl<S: 'static + spi::SpiSlave> SpiPeripheralComponent<S> {
+    pub fn new(device: &'static S) -> Self {
+        SpiPeripheralComponent { device }
+    }
+}
+
+impl<S: 'static + spi::SpiSlave + kernel::hil::spi::SpiSlaveDevice> Component
+    for SpiPeripheralComponent<S>
+{
+    type StaticInput = &'static mut MaybeUninit<SpiPeripheral<'static, S>>;
+    type Output = &'static SpiPeripheral<'static, S>;
+
+    unsafe fn finalize(self, static_buffer: Self::StaticInput) -> Self::Output {
+        let spi_device = static_init_half!(
+            static_buffer,
+            SpiPeripheral<'static, S>,
+            SpiPeripheral::new(self.device)
         );
 
         spi_device

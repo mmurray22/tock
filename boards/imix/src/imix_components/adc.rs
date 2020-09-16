@@ -37,7 +37,7 @@ impl Component for AdcComponent {
     type StaticInput = ();
     type Output = &'static adc::Adc<'static, sam4l::adc::Adc>;
 
-    unsafe fn finalize(&mut self, _s: Self::StaticInput) -> Self::Output {
+    unsafe fn finalize(self, _s: Self::StaticInput) -> Self::Output {
         let grant_cap = create_capability!(capabilities::MemoryAllocationCapability);
         let adc_channels = static_init!(
             [&'static sam4l::adc::AdcChannel; 6],
@@ -53,7 +53,7 @@ impl Component for AdcComponent {
         let adc = static_init!(
             adc::Adc<'static, sam4l::adc::Adc>,
             adc::Adc::new(
-                &mut sam4l::adc::ADC0,
+                &sam4l::adc::ADC0,
                 self.board_kernel.create_grant(&grant_cap),
                 adc_channels,
                 &mut adc::ADC_BUFFER1,

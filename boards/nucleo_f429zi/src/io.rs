@@ -9,9 +9,10 @@ use kernel::hil::led;
 use kernel::hil::uart;
 use kernel::hil::uart::Configure;
 
-use stm32f4xx;
-use stm32f4xx::gpio::PinId;
+use stm32f429zi;
+use stm32f429zi::gpio::PinId;
 
+use crate::CHIP;
 use crate::PROCESSES;
 
 /// Writer is used by kernel::debug to panic message to the serial port.
@@ -39,7 +40,7 @@ impl Write for Writer {
 
 impl IoWrite for Writer {
     fn write(&mut self, buf: &[u8]) {
-        let uart = unsafe { &mut stm32f4xx::usart::USART3 };
+        let uart = unsafe { &mut stm32f429zi::usart::USART3 };
 
         if !self.initialized {
             self.initialized = true;
@@ -64,18 +65,15 @@ impl IoWrite for Writer {
 #[panic_handler]
 pub unsafe extern "C" fn panic_fmt(info: &PanicInfo) -> ! {
     // User LD2 is connected to PB07
-    PinId::PB07.get_pin_mut().as_mut().map(|pb7| {
-        let led = &mut led::LedHigh::new(pb7);
-        let writer = &mut WRITER;
+    let led = &mut led::LedHigh::new(PinId::PB07.get_pin_mut().as_mut().unwrap());
+    let writer = &mut WRITER;
 
-        debug::panic(
-            &mut [led],
-            writer,
-            info,
-            &cortexm4::support::nop,
-            &PROCESSES,
-        )
-    });
-
-    loop {}
+    debug::panic(
+        &mut [led],
+        writer,
+        info,
+        &cortexm4::support::nop,
+        &PROCESSES,
+        &CHIP,
+    )
 }

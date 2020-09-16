@@ -1,7 +1,10 @@
 //! Tock kernel for the Aconno ACD52832 board based on the Nordic nRF52832 MCU.
 
 #![no_std]
-#![no_main]
+// Disable this attribute when documenting, as a workaround for
+// https://github.com/rust-lang/rust/issues/62184.
+#![cfg_attr(not(doc), no_main)]
+#![feature(const_in_array_repeat_expressions)]
 #![deny(missing_docs)]
 
 use capsules::virtual_alarm::VirtualMuxAlarm;
@@ -17,7 +20,7 @@ use kernel::{create_capability, debug, debug_gpio, static_init};
 use nrf52832::gpio::Pin;
 use nrf52832::rtc::Rtc;
 
-use nrf52dk_base::nrf52_components::ble::BLEComponent;
+use nrf52_components::ble::BLEComponent;
 
 const LED1_PIN: Pin = Pin::P0_26;
 const LED2_PIN: Pin = Pin::P0_22;
@@ -40,9 +43,6 @@ const FAULT_RESPONSE: kernel::procs::FaultResponse = kernel::procs::FaultRespons
 // Number of concurrent processes this platform supports.
 const NUM_PROCS: usize = 4;
 
-#[link_section = ".app_memory"]
-static mut APP_MEMORY: [u8; 32768] = [0; 32768];
-
 static mut PROCESSES: [Option<&'static dyn kernel::procs::ProcessType>; NUM_PROCS] =
     [None; NUM_PROCS];
 
@@ -55,13 +55,13 @@ pub static mut STACK_MEMORY: [u8; 0x1000] = [0; 0x1000];
 pub struct Platform {
     ble_radio: &'static capsules::ble_advertising_driver::BLE<
         'static,
-        nrf52832::ble_radio::Radio,
+        nrf52832::ble_radio::Radio<'static>,
         VirtualMuxAlarm<'static, Rtc<'static>>,
     >,
-    button: &'static capsules::button::Button<'static>,
+    button: &'static capsules::button::Button<'static, nrf52832::gpio::GPIOPin<'static>>,
     console: &'static capsules::console::Console<'static>,
-    gpio: &'static capsules::gpio::GPIO<'static>,
-    led: &'static capsules::led::LED<'static>,
+    gpio: &'static capsules::gpio::GPIO<'static, nrf52832::gpio::GPIOPin<'static>>,
+    led: &'static capsules::led::LED<'static, nrf52832::gpio::GPIOPin<'static>>,
     rng: &'static capsules::rng::RngDriver<'static>,
     temp: &'static capsules::temperature::TemperatureSensor<'static>,
     ipc: kernel::ipc::IPC,
@@ -124,71 +124,6 @@ pub unsafe fn reset_handler() {
     );
     DynamicDeferredCall::set_global_instance(dynamic_deferred_caller);
 
-    // GPIOs
-    let gpio_pins = static_init!(
-        [&'static dyn kernel::hil::gpio::InterruptValuePin; 7],
-        [
-            static_init!(
-                kernel::hil::gpio::InterruptValueWrapper,
-                kernel::hil::gpio::InterruptValueWrapper::new(&nrf52832::gpio::PORT[Pin::P0_25])
-            )
-            .finalize(),
-            static_init!(
-                kernel::hil::gpio::InterruptValueWrapper,
-                kernel::hil::gpio::InterruptValueWrapper::new(&nrf52832::gpio::PORT[Pin::P0_26])
-            )
-            .finalize(),
-            static_init!(
-                kernel::hil::gpio::InterruptValueWrapper,
-                kernel::hil::gpio::InterruptValueWrapper::new(&nrf52832::gpio::PORT[Pin::P0_27])
-            )
-            .finalize(),
-            static_init!(
-                kernel::hil::gpio::InterruptValueWrapper,
-                kernel::hil::gpio::InterruptValueWrapper::new(&nrf52832::gpio::PORT[Pin::P0_28])
-            )
-            .finalize(),
-            static_init!(
-                kernel::hil::gpio::InterruptValueWrapper,
-                kernel::hil::gpio::InterruptValueWrapper::new(&nrf52832::gpio::PORT[Pin::P0_29])
-            )
-            .finalize(),
-            static_init!(
-                kernel::hil::gpio::InterruptValueWrapper,
-                kernel::hil::gpio::InterruptValueWrapper::new(&nrf52832::gpio::PORT[Pin::P0_30])
-            )
-            .finalize(),
-            static_init!(
-                kernel::hil::gpio::InterruptValueWrapper,
-                kernel::hil::gpio::InterruptValueWrapper::new(&nrf52832::gpio::PORT[Pin::P0_31])
-            )
-            .finalize(),
-        ]
-    );
-
-    // LEDs
-    let led_pins = static_init!(
-        [(&'static dyn hil::gpio::Pin, capsules::led::ActivationMode); 4],
-        [
-            (
-                &nrf52832::gpio::PORT[LED1_PIN],
-                capsules::led::ActivationMode::ActiveLow
-            ),
-            (
-                &nrf52832::gpio::PORT[LED2_PIN],
-                capsules::led::ActivationMode::ActiveLow
-            ),
-            (
-                &nrf52832::gpio::PORT[LED3_PIN],
-                capsules::led::ActivationMode::ActiveLow
-            ),
-            (
-                &nrf52832::gpio::PORT[LED4_PIN],
-                capsules::led::ActivationMode::ActiveLow
-            ),
-        ]
-    );
-
     // Make non-volatile memory writable and activate the reset button
     let uicr = nrf52832::uicr::Uicr::new();
     nrf52832::nvmc::NVMC.erase_uicr();
@@ -208,56 +143,79 @@ pub unsafe fn reset_handler() {
     //
     // GPIO Pins
     //
-    let gpio = static_init!(
-        capsules::gpio::GPIO<'static>,
-        capsules::gpio::GPIO::new(
-            gpio_pins,
-            board_kernel.create_grant(&memory_allocation_capability)
-        )
-    );
-    for pin in gpio_pins.iter() {
-        pin.set_client(gpio);
-    }
+    let gpio = components::gpio::GpioComponent::new(
+        board_kernel,
+        components::gpio_component_helper!(
+            nrf52832::gpio::GPIOPin,
+            0 => &nrf52832::gpio::PORT[Pin::P0_25],
+            1 => &nrf52832::gpio::PORT[Pin::P0_26],
+            2 => &nrf52832::gpio::PORT[Pin::P0_27],
+            3 => &nrf52832::gpio::PORT[Pin::P0_28],
+            4 => &nrf52832::gpio::PORT[Pin::P0_29],
+            5 => &nrf52832::gpio::PORT[Pin::P0_30],
+            6 => &nrf52832::gpio::PORT[Pin::P0_31]
+        ),
+    )
+    .finalize(components::gpio_component_buf!(nrf52832::gpio::GPIOPin));
 
     //
     // LEDs
     //
-    let led = static_init!(
-        capsules::led::LED<'static>,
-        capsules::led::LED::new(led_pins)
-    );
+    let led = components::led::LedsComponent::new(components::led_component_helper!(
+        nrf52832::gpio::GPIOPin,
+        (
+            &nrf52832::gpio::PORT[LED1_PIN],
+            kernel::hil::gpio::ActivationMode::ActiveLow
+        ),
+        (
+            &nrf52832::gpio::PORT[LED2_PIN],
+            kernel::hil::gpio::ActivationMode::ActiveLow
+        ),
+        (
+            &nrf52832::gpio::PORT[LED3_PIN],
+            kernel::hil::gpio::ActivationMode::ActiveLow
+        ),
+        (
+            &nrf52832::gpio::PORT[LED4_PIN],
+            kernel::hil::gpio::ActivationMode::ActiveLow
+        )
+    ))
+    .finalize(components::led_component_buf!(nrf52832::gpio::GPIOPin));
 
     //
     // Buttons
     //
-    let button = components::button::ButtonComponent::new(board_kernel).finalize(
+    let button = components::button::ButtonComponent::new(
+        board_kernel,
         components::button_component_helper!(
+            nrf52832::gpio::GPIOPin,
             // 13
             (
                 &nrf52832::gpio::PORT[BUTTON1_PIN],
-                capsules::button::GpioMode::LowWhenPressed,
+                hil::gpio::ActivationMode::ActiveLow,
                 hil::gpio::FloatingState::PullUp
             ),
             // 14
             (
                 &nrf52832::gpio::PORT[BUTTON2_PIN],
-                capsules::button::GpioMode::LowWhenPressed,
+                hil::gpio::ActivationMode::ActiveLow,
                 hil::gpio::FloatingState::PullUp
             ),
             // 15
             (
                 &nrf52832::gpio::PORT[BUTTON3_PIN],
-                capsules::button::GpioMode::LowWhenPressed,
+                hil::gpio::ActivationMode::ActiveLow,
                 hil::gpio::FloatingState::PullUp
             ),
             // 16
             (
                 &nrf52832::gpio::PORT[BUTTON4_PIN],
-                capsules::button::GpioMode::LowWhenPressed,
+                hil::gpio::ActivationMode::ActiveLow,
                 hil::gpio::FloatingState::PullUp
             )
         ),
-    );
+    )
+    .finalize(components::button_component_buf!(nrf52832::gpio::GPIOPin));
 
     //
     // RTC for Timers
@@ -297,32 +255,10 @@ pub unsafe fn reset_handler() {
     // RTT and Console and `debug!()`
     //
 
-    // Virtual alarm for the Segger RTT communication channel
-    let virtual_alarm_rtt = static_init!(
-        capsules::virtual_alarm::VirtualMuxAlarm<'static, nrf52832::rtc::Rtc>,
-        capsules::virtual_alarm::VirtualMuxAlarm::new(mux_alarm)
-    );
-
     // RTT communication channel
-    let rtt_memory = static_init!(
-        capsules::segger_rtt::SeggerRttMemory,
-        capsules::segger_rtt::SeggerRttMemory::new(
-            b"Terminal\0",
-            &mut capsules::segger_rtt::UP_BUFFER,
-            b"Terminal\0",
-            &mut capsules::segger_rtt::DOWN_BUFFER
-        )
-    );
-    let rtt = static_init!(
-        capsules::segger_rtt::SeggerRtt<VirtualMuxAlarm<'static, nrf52832::rtc::Rtc>>,
-        capsules::segger_rtt::SeggerRtt::new(
-            virtual_alarm_rtt,
-            rtt_memory,
-            &mut capsules::segger_rtt::UP_BUFFER,
-            &mut capsules::segger_rtt::DOWN_BUFFER
-        )
-    );
-    hil::time::Alarm::set_client(virtual_alarm_rtt, rtt);
+    let rtt_memory = components::segger_rtt::SeggerRttMemoryComponent::new().finalize(());
+    let rtt = components::segger_rtt::SeggerRttComponent::new(mux_alarm, rtt_memory)
+        .finalize(components::segger_rtt_component_helper!(nrf52832::rtc::Rtc));
 
     //
     // Virtual UART
@@ -344,7 +280,7 @@ pub unsafe fn reset_handler() {
     // Create shared mux for the I2C bus
     let i2c_mux = static_init!(
         capsules::virtual_i2c::MuxI2C<'static>,
-        capsules::virtual_i2c::MuxI2C::new(&nrf52832::i2c::TWIM0)
+        capsules::virtual_i2c::MuxI2C::new(&nrf52832::i2c::TWIM0, None, dynamic_deferred_caller)
     );
     nrf52832::i2c::TWIM0.configure(
         nrf52832::pinmux::Pinmux::new(21),
@@ -354,12 +290,12 @@ pub unsafe fn reset_handler() {
 
     // Configure the MCP23017. Device address 0x20.
     let mcp_pin0 = static_init!(
-        hil::gpio::InterruptValueWrapper,
+        hil::gpio::InterruptValueWrapper<'static, nrf52832::gpio::GPIOPin>,
         hil::gpio::InterruptValueWrapper::new(&nrf52832::gpio::PORT[Pin::P0_11])
     )
     .finalize();
     let mcp_pin1 = static_init!(
-        hil::gpio::InterruptValueWrapper,
+        hil::gpio::InterruptValueWrapper<'static, nrf52832::gpio::GPIOPin>,
         hil::gpio::InterruptValueWrapper::new(&nrf52832::gpio::PORT[Pin::P0_12])
     )
     .finalize();
@@ -415,7 +351,7 @@ pub unsafe fn reset_handler() {
     let temp = static_init!(
         capsules::temperature::TemperatureSensor<'static>,
         capsules::temperature::TemperatureSensor::new(
-            &mut nrf52832::temperature::TEMP,
+            &nrf52832::temperature::TEMP,
             board_kernel.create_grant(&memory_allocation_capability)
         )
     );
@@ -508,7 +444,6 @@ pub unsafe fn reset_handler() {
 
     nrf52832::clock::CLOCK.low_set_source(nrf52832::clock::LowClockSource::XTAL);
     nrf52832::clock::CLOCK.low_start();
-    nrf52832::clock::CLOCK.high_set_source(nrf52832::clock::HighClockSource::XTAL);
     nrf52832::clock::CLOCK.high_start();
     while !nrf52832::clock::CLOCK.low_started() {}
     while !nrf52832::clock::CLOCK.high_started() {}
@@ -536,19 +471,45 @@ pub unsafe fn reset_handler() {
     debug!("Initialization complete. Entering main loop\r");
     debug!("{}", &nrf52832::ficr::FICR_INSTANCE);
 
+    /// These symbols are defined in the linker script.
     extern "C" {
         /// Beginning of the ROM region containing app images.
         static _sapps: u8;
+        /// End of the ROM region containing app images.
+        static _eapps: u8;
+        /// Beginning of the RAM region for app memory.
+        static mut _sappmem: u8;
+        /// End of the RAM region for app memory.
+        static _eappmem: u8;
     }
+
     kernel::procs::load_processes(
         board_kernel,
         chip,
-        &_sapps as *const u8,
-        &mut APP_MEMORY,
+        core::slice::from_raw_parts(
+            &_sapps as *const u8,
+            &_eapps as *const u8 as usize - &_sapps as *const u8 as usize,
+        ),
+        core::slice::from_raw_parts_mut(
+            &mut _sappmem as *mut u8,
+            &_eappmem as *const u8 as usize - &_sappmem as *const u8 as usize,
+        ),
         &mut PROCESSES,
         FAULT_RESPONSE,
         &process_management_capability,
-    );
+    )
+    .unwrap_or_else(|err| {
+        debug!("Error loading processes!");
+        debug!("{:?}", err);
+    });
 
-    board_kernel.kernel_loop(&platform, chip, Some(&platform.ipc), &main_loop_capability);
+    let scheduler = components::sched::round_robin::RoundRobinComponent::new(&PROCESSES)
+        .finalize(components::rr_component_helper!(NUM_PROCS));
+    board_kernel.kernel_loop(
+        &platform,
+        chip,
+        Some(&platform.ipc),
+        scheduler,
+        &main_loop_capability,
+    );
 }

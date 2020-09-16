@@ -8,12 +8,14 @@
 //! -----
 //!
 //! ```rust
+//! # use kernel::static_init;
+//!
 //! let button_pins = static_init!(
 //!     [&'static sam4l::gpio::GPIOPin; 1],
 //!     [&sam4l::gpio::PA[16]]);
 //! let button = static_init!(
-//!     capsules::button::Button<'static, sam4l::gpio::GPIOPin>,
-//!     capsules::button::Button::new(button_pins, kernel::Grant::create()));
+//!     capsules::button::Button<'static>,
+//!     capsules::button::Button::new(button_pins, board_kernel.create_grant(&grant_cap)));
 //! for btn in button_pins.iter() {
 //!     btn.set_client(button);
 //! }
@@ -51,6 +53,7 @@
 
 use core::cell::Cell;
 use kernel::hil::gpio;
+use kernel::hil::gpio::{Configure, Input, InterruptWithValue};
 use kernel::{AppId, Callback, Driver, Grant, ReturnCode};
 
 /// Syscall driver number.
@@ -62,71 +65,45 @@ pub const DRIVER_NUM: usize = driver::NUM::Button as usize;
 /// that app has an interrupt registered for that button.
 pub type SubscribeMap = u32;
 
-/// Whether the GPIOs for the buttons on this platform are low when the button
-/// is pressed or high.
-#[derive(Clone, Copy)]
-pub enum GpioMode {
-    LowWhenPressed,
-    HighWhenPressed,
-}
-
-/// Values that are passed to userspace to identify if the button is pressed
-/// or not.
-#[derive(Clone, Copy)]
-pub enum ButtonState {
-    NotPressed = 0,
-    Pressed = 1,
-}
-
 /// Manages the list of GPIO pins that are connected to buttons and which apps
 /// are listening for interrupts from which buttons.
-pub struct Button<'a> {
+pub struct Button<'a, P: gpio::InterruptPin<'a>> {
     pins: &'a [(
-        &'a dyn gpio::InterruptValuePin,
-        GpioMode,
+        &'a gpio::InterruptValueWrapper<'a, P>,
+        gpio::ActivationMode,
         gpio::FloatingState,
     )],
     apps: Grant<(Option<Callback>, SubscribeMap)>,
 }
 
-impl<'a> Button<'a> {
+impl<'a, P: gpio::InterruptPin<'a>> Button<'a, P> {
     pub fn new(
         pins: &'a [(
-            &'a dyn gpio::InterruptValuePin,
-            GpioMode,
+            &'a gpio::InterruptValueWrapper<'a, P>,
+            gpio::ActivationMode,
             gpio::FloatingState,
         )],
         grant: Grant<(Option<Callback>, SubscribeMap)>,
-    ) -> Button<'a> {
+    ) -> Self {
         for (i, &(pin, _, floating_state)) in pins.iter().enumerate() {
             pin.make_input();
             pin.set_value(i as u32);
             pin.set_floating_state(floating_state);
         }
 
-        Button {
+        Self {
             pins: pins,
             apps: grant,
         }
     }
 
-    fn get_button_state(&self, pin_num: u32) -> ButtonState {
-        let index = pin_num as usize;
-        let pin_value = self.pins[index].0.read();
-        match self.pins[index].1 {
-            GpioMode::LowWhenPressed => match pin_value {
-                false => ButtonState::Pressed,
-                true => ButtonState::NotPressed,
-            },
-            GpioMode::HighWhenPressed => match pin_value {
-                false => ButtonState::NotPressed,
-                true => ButtonState::Pressed,
-            },
-        }
+    fn get_button_state(&self, pin_num: u32) -> gpio::ActivationState {
+        let pin = &self.pins[pin_num as usize];
+        pin.0.read_activation(pin.1)
     }
 }
 
-impl<'a> Driver for Button<'a> {
+impl<'a, P: gpio::InterruptPin<'a>> Driver for Button<'a, P> {
     /// Set callbacks.
     ///
     /// ### `subscribe_num`
@@ -247,7 +224,7 @@ impl<'a> Driver for Button<'a> {
     }
 }
 
-impl<'a> gpio::ClientWithValue for Button<'a> {
+impl<'a, P: gpio::InterruptPin<'a>> gpio::ClientWithValue for Button<'a, P> {
     fn fired(&self, pin_num: u32) {
         // Read the value of the pin and get the button state.
         let button_state = self.get_button_state(pin_num);

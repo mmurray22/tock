@@ -52,3 +52,9 @@ doc/rustdoc
 # Cargo.lock files have a lot of noisy churn during development. Instead they
 # are manually included for releases.
 Cargo.lock
+
+# The QEMU build directory
+tools/qemu-build
+
+# Python scripts
+__pycache__

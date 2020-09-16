@@ -4,8 +4,7 @@
 
 #![crate_name = "sam4l"]
 #![crate_type = "rlib"]
-#![feature(asm, concat_idents, const_fn, core_intrinsics)]
-#![feature(in_band_lifetimes)]
+#![feature(const_fn)]
 #![no_std]
 
 mod deferred_call_tasks;
@@ -35,30 +34,9 @@ pub mod usart;
 pub mod usbc;
 pub mod wdt;
 
-use cortexm4::{generic_isr, hard_fault_handler, svc_handler, systick_handler};
-
-#[cfg(not(any(target_arch = "arm", target_os = "none")))]
-unsafe extern "C" fn unhandled_interrupt() {
-    unimplemented!()
-}
-
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-unsafe extern "C" fn unhandled_interrupt() {
-    let mut interrupt_number: u32;
-
-    // IPSR[8:0] holds the currently active interrupt
-    asm!(
-    "mrs    r0, ipsr                    "
-    : "={r0}"(interrupt_number)
-    :
-    : "r0"
-    :
-    );
-
-    interrupt_number = interrupt_number & 0x1ff;
-
-    panic!("Unhandled Interrupt. ISR {} is active.", interrupt_number);
-}
+use cortexm4::{
+    generic_isr, hard_fault_handler, svc_handler, systick_handler, unhandled_interrupt,
+};
 
 extern "C" {
     // _estack is not really a function, but it makes the types work
@@ -68,11 +46,11 @@ extern "C" {
     // Defined by platform
     fn reset_handler();
 
-    static mut _szero: u32;
-    static mut _ezero: u32;
-    static mut _etext: u32;
-    static mut _srelocate: u32;
-    static mut _erelocate: u32;
+    static mut _szero: usize;
+    static mut _ezero: usize;
+    static mut _etext: usize;
+    static mut _srelocate: usize;
+    static mut _erelocate: usize;
 }
 
 #[cfg_attr(
