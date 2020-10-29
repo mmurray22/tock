@@ -27,6 +27,7 @@ use kernel::hil::radio;
 use kernel::hil::radio::{RadioConfig, RadioData};
 //use kernel::hil::time::Alarm;
 use kernel::hil::Controller;
+use kernel::hil::spi::{self, SpiSlave};
 #[allow(unused_imports)]
 use kernel::{create_capability, debug, debug_gpio, static_init};
 
@@ -42,11 +43,17 @@ use components::nrf51822::Nrf51822Component;
 use components::process_console::ProcessConsoleComponent;
 use components::rng::RngComponent;
 use components::si7021::{HumidityComponent, SI7021Component};
-use components::spi::{SpiComponent, SpiSyscallComponent};
+use components::spi::{SpiComponent, SpiSyscallComponent, SpiPeripheralComponent};
 use imix_components::adc::AdcComponent;
 use imix_components::fxos8700::NineDofComponent;
-use imix_components::rf233::RF233Component;
+//use imix_components::nonvolatile_storage::NonvolatileStorageComponent;
+//use imix_components::radio::RadioComponent;
+//use imix_components::rf233::RF233Component;
+//use imix_components::udp_driver::UDPDriverComponent;
+//use imix_components::udp_mux::UDPMuxComponent;
 use imix_components::usb::UsbComponent;
+
+use sam4l::spi::SPI as SPI_PERIPHERAL;
 
 /// Support routines for debugging I/O.
 ///
@@ -118,14 +125,21 @@ struct Imix {
         'static,
         sam4l::acifc::Acifc<'static>,
     >,
-    spi: &'static capsules::spi_controller::Spi<
+    /*spi: &'static capsules::spi_controller::Spi<
         'static,
         VirtualSpiMasterDevice<'static, sam4l::spi::SpiHw>,
+    >,*/
+    spi_peripheral: &'static capsules::spi_peripheral::SpiPeripheral<
+        'static,
+        capsules::virtual_spi::VirtualSpiSlaveDevice<
+            'static,
+            sam4l::spi::SpiHw
+        >,
     >,
     ipc: kernel::ipc::IPC,
     ninedof: &'static capsules::ninedof::NineDof<'static>,
-    radio_driver: &'static capsules::ieee802154::RadioDriver<'static>,
-    udp_driver: &'static capsules::net::udp::UDPDriver<'static>,
+    //radio_driver: &'static capsules::ieee802154::RadioDriver<'static>,
+    //udp_driver: &'static capsules::net::udp::UDPDriver<'static>,
     crc: &'static capsules::crc::Crc<'static, sam4l::crccu::Crccu<'static>>,
     usb_driver: &'static capsules::usb::usb_user::UsbSyscallDriver<
         'static,
@@ -157,7 +171,6 @@ impl kernel::Platform for Imix {
             capsules::console::DRIVER_NUM => f(Some(self.console)),
             capsules::gpio::DRIVER_NUM => f(Some(self.gpio)),
             capsules::alarm::DRIVER_NUM => f(Some(self.alarm)),
-            capsules::spi_controller::DRIVER_NUM => f(Some(self.spi)),
             capsules::adc::DRIVER_NUM => f(Some(self.adc)),
             capsules::led::DRIVER_NUM => f(Some(self.led)),
             capsules::button::DRIVER_NUM => f(Some(self.button)),
@@ -168,8 +181,7 @@ impl kernel::Platform for Imix {
             capsules::ninedof::DRIVER_NUM => f(Some(self.ninedof)),
             capsules::crc::DRIVER_NUM => f(Some(self.crc)),
             capsules::usb::usb_user::DRIVER_NUM => f(Some(self.usb_driver)),
-            capsules::ieee802154::DRIVER_NUM => f(Some(self.radio_driver)),
-            capsules::net::udp::DRIVER_NUM => f(Some(self.udp_driver)),
+            capsules::spi_peripheral::DRIVER_NUM => f(Some(self.spi_peripheral)),
             capsules::nrf51822_serialization::DRIVER_NUM => f(Some(self.nrf51822)),
             capsules::nonvolatile_storage_driver::DRIVER_NUM => f(Some(self.nonvolatile_storage)),
             capsules::rng::DRIVER_NUM => f(Some(self.rng)),
@@ -277,7 +289,7 @@ pub unsafe fn reset_handler() {
     let grant_cap = create_capability!(capabilities::MemoryAllocationCapability);
 
     power::configure_submodules(power::SubmoduleConfig {
-        rf233: true,
+        rf233: false,
         nrf51422: true,
         sensors: true,
         trng: true,
@@ -334,14 +346,14 @@ pub unsafe fn reset_handler() {
     let ninedof = NineDofComponent::new(board_kernel, mux_i2c, &sam4l::gpio::PC[13]).finalize(());
 
     // SPI MUX, SPI syscall driver and RF233 radio
-    let mux_spi = components::spi::SpiMuxComponent::new(&sam4l::spi::SPI)
-        .finalize(components::spi_mux_component_helper!(sam4l::spi::SpiHw));
-
-    let spi_syscalls = SpiSyscallComponent::new(mux_spi, 3)
-        .finalize(components::spi_syscall_component_helper!(sam4l::spi::SpiHw));
-    let rf233_spi = SpiComponent::new(mux_spi, 3)
-        .finalize(components::spi_component_helper!(sam4l::spi::SpiHw));
-    let rf233 = RF233Component::new(
+    let spi_peripheral_device = static_init!(capsules::virtual_spi::VirtualSpiSlaveDevice<'static, sam4l::spi::SpiHw>, capsules::virtual_spi::VirtualSpiSlaveDevice::new(&SPI_PERIPHERAL));
+    kernel::hil::spi::SpiSlave::set_client(&SPI_PERIPHERAL, Some(spi_peripheral_device));
+    let spi_peripheral = static_init!(capsules::spi_peripheral::SpiPeripheral<'static, capsules::virtual_spi::VirtualSpiSlaveDevice<'static, sam4l::spi::SpiHw>>,
+                                      capsules::spi_peripheral::SpiPeripheral::new(spi_peripheral_device));
+        
+    //let rf233_spi = SpiComponent::new(mux_spi, 3)
+      //  .finalize(components::spi_component_helper!(sam4l::spi::SpiHw));
+    /*let rf233 = RF233Component::new(
         rf233_spi,
         &sam4l::gpio::PA[09], // reset
         &sam4l::gpio::PA[10], // sleep
@@ -349,7 +361,7 @@ pub unsafe fn reset_handler() {
         &sam4l::gpio::PA[08],
         RADIO_CHANNEL,
     )
-    .finalize(());
+    .finalize(());*/
 
     let adc = AdcComponent::new(board_kernel).finalize(());
     let gpio = GpioComponent::new(
@@ -412,8 +424,8 @@ pub unsafe fn reset_handler() {
     let src_mac_from_serial_num: MacAddress = MacAddress::Short(serial_num_bottom_16);
 
     // Can this initialize be pushed earlier, or into component? -pal
-    rf233.initialize(&mut RF233_BUF, &mut RF233_REG_WRITE, &mut RF233_REG_READ);
-    let (radio_driver, mux_mac) = components::ieee802154::Ieee802154Component::new(
+    /*rf233.initialize(&mut RF233_BUF, &mut RF233_REG_WRITE, &mut RF233_REG_READ);
+    let (radio_driver, mux_mac) = RadioComponent::new(
         board_kernel,
         rf233,
         &sam4l::aes::AES,
@@ -424,6 +436,7 @@ pub unsafe fn reset_handler() {
         capsules::rf233::RF233<'static, VirtualSpiMasterDevice<'static, sam4l::spi::SpiHw>>,
         sam4l::aes::Aes<'static>
     ));
+    .finalize(());*/
 
     let usb_driver = UsbComponent::new(board_kernel).finalize(());
 
@@ -462,8 +475,8 @@ pub unsafe fn reset_handler() {
         ]
     );
 
-    let (udp_send_mux, udp_recv_mux, udp_port_table) = components::udp_mux::UDPMuxComponent::new(
-        mux_mac,
+    /*let (udp_send_mux, udp_recv_mux, udp_port_table) = UDPMuxComponent::new(
+        //mux_mac,
         DEFAULT_CTX_PREFIX_LEN,
         DEFAULT_CTX_PREFIX,
         DST_MAC_ADDR,
@@ -476,13 +489,25 @@ pub unsafe fn reset_handler() {
 
     // UDP driver initialization happens here
     let udp_driver = components::udp_driver::UDPDriverComponent::new(
+    .finalize(());*/
+
+    // UDP driver initialization happens here
+    /*let udp_driver = UDPDriverComponent::new(
+>>>>>>> Stashed changes
         board_kernel,
         udp_send_mux,
         udp_recv_mux,
         udp_port_table,
         local_ip_ifaces,
     )
+<<<<<<< Updated upstream
     .finalize(components::udp_driver_component_helper!(sam4l::ast::Ast));
+=======
+    .finalize(());*/
+
+    // Only include to run kernel tests, do not include during normal operation
+    //let udp_lowpan_test =
+    //    udp_lowpan_test::initialize_all(udp_send_mux, udp_recv_mux, udp_port_table, mux_alarm);
 
     let imix = Imix {
         pconsole,
@@ -498,11 +523,11 @@ pub unsafe fn reset_handler() {
         rng,
         analog_comparator,
         crc,
-        spi: spi_syscalls,
+        spi_peripheral,
         ipc: kernel::ipc::IPC::new(board_kernel, &grant_cap),
         ninedof,
-        radio_driver,
-        udp_driver,
+        //radio_driver,
+        //udp_driver,
         usb_driver,
         nrf51822: nrf_serialization,
         nonvolatile_storage: nonvolatile_storage,
@@ -516,8 +541,8 @@ pub unsafe fn reset_handler() {
 
     // These two lines need to be below the creation of the chip for
     // initialization to work.
-    rf233.reset();
-    rf233.start();
+    //rf233.reset();
+    //rf233.start();
 
     imix.pconsole.start();
 
