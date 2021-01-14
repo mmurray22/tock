@@ -62,6 +62,7 @@ pub mod si7021;
 pub mod spi_controller;
 pub mod spi_peripheral;
 pub mod st7735;
+pub mod system_call_interface;
 pub mod temperature;
 pub mod touch;
 pub mod tsl2561;

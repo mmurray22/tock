@@ -2,9 +2,10 @@
 //! device
 
 use core::cell::Cell;
+use core::convert::TryInto;
 use kernel::common::cells::{OptionalCell, TakeCell};
 use kernel::hil::spi;
-use kernel::{AppId, AppSlice, Callback, Driver, Grant, ReturnCode, Shared};
+use kernel::{AppId, AppSlice, Callback, debug, Driver, Grant, ReturnCode, Shared};
 
 // The capsule takes in a driver number, system call number, and up to four 
 // arguments and determines whether the system call can be handled locally or
@@ -28,6 +29,7 @@ impl DetermineRoute {
   }
 
   pub fn determine_route(&self) -> usize {
+    // TODO: Need to figure out metric for determining route //
     let route : usize = 1;
     route
   }
@@ -37,24 +39,27 @@ impl DetermineRoute {
       arg_one: usize, 
       arg_two: usize, 
       arg_three: usize, 
-      arg_four: usize) -> [usize; 6] {
-    [self.driver_num, self.system_call_num, arg_one, arg_two, arg_three, arg_four] 
+      buf: &mut [u8; 5]) {
+    debug!("Here 1!");
+    buf[0] = self.system_call_num.try_into().unwrap();
+    buf[1] = self.driver_num.try_into().unwrap();
+    buf[2] = arg_one.try_into().unwrap();
+    buf[3] = arg_two.try_into().unwrap();
+    buf[4] = arg_three.try_into().unwrap();
   }
 }
 
 #[derive(Copy, Clone, PartialEq)]
 enum Status {
   Idle,
-  Init,
   Sending,
-  Receiving,
 }
 
 pub struct RemoteSystemCall<'a> {
   spi: &'a dyn spi::SpiMasterDevice,
   pass_buffer: TakeCell<'static, [u8]>,
   write_buffer: TakeCell<'static, [u8]>,
-  read_buffer: TakeCell<'static, [usize; 6]>,
+  read_buffer: TakeCell<'static, [u8]>,
   status: Cell<Status>,
   driver_num: usize,
   system_call_num: usize,
@@ -64,7 +69,7 @@ impl<'a> RemoteSystemCall<'a> {
   pub fn new(
       spi: &'a dyn spi::SpiMasterDevice,
       pass_buffer: &'static mut [u8],
-      read_buffer: &'static mut [usize; 6],
+      read_buffer: &'static mut [u8],
       driver_num: usize,
       system_call_num: usize
   ) -> RemoteSystemCall<'a> {
@@ -99,7 +104,7 @@ impl<'a> RemoteSystemCall<'a> {
       }
   }
 
-  pub fn receive_data(&self) -> Option<&'static mut [usize; 6]> {
+  pub fn receive_data(&self) -> Option<&'static mut [u8]> {
       if self.status.get() == Status::Sending {
         self.read_buffer.take()
       } else {
