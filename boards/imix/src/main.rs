@@ -11,13 +11,14 @@
 #![deny(missing_docs)]
 
 mod imix_components;
+use capsules::system_call_interface::RemoteSystemCall;
 use capsules::alarm::AlarmDriver;
 use capsules::net::ieee802154::MacAddress;
 use capsules::net::ipv6::ip_utils::IPAddr;
 use capsules::virtual_alarm::VirtualMuxAlarm;
 use capsules::virtual_i2c::MuxI2C;
 use capsules::virtual_spi::VirtualSpiMasterDevice;
-use kernel::capabilities;
+use kernel::{capabilities, ReturnCode, syscall};
 use kernel::common::dynamic_deferred_call::{DynamicDeferredCall, DynamicDeferredCallClientState};
 use kernel::component::Component;
 use kernel::hil::i2c::I2CMaster;
@@ -124,6 +125,7 @@ struct Imix {
     >,
     nrf51822: &'static capsules::nrf51822_serialization::Nrf51822Serialization<'static>,
     nonvolatile_storage: &'static capsules::nonvolatile_storage_driver::NonvolatileStorage<'static>,
+    remote_system_call: &'static capsules::system_call_interface::RemoteSystemCall<'static>,
 }
 
 // The RF233 radio stack requires our buffers for its SPI operations:
@@ -167,6 +169,35 @@ impl kernel::Platform for Imix {
             kernel::ipc::DRIVER_NUM => f(Some(&self.ipc)),
             _ => f(None),
         }
+    }
+
+    fn remote_syscall(
+        &self, 
+        syscall: &syscall::Syscall
+    ) -> () {
+        /*Note: Only supports LED Capsule and command syscall*/
+        match syscall {
+            syscall::Syscall::COMMAND {
+                driver_number,
+                subdriver_number,
+                arg0,
+                arg1,
+            } => {
+                if self.remote_system_call.determine_route(*driver_number) == 0 {
+                    return;
+                }
+                let mut buf: [u8; 5] = [0; 5];
+                self.remote_system_call.create_read_buffer(2,
+                                                         *driver_number,
+                                                         *subdriver_number,
+                                                         *arg0,
+                                                         *arg1,
+                                                         &mut buf);
+                ()
+            },
+            _ => (),
+        }
+        /*TODO: Add send_data function*/
     }
 }
 
@@ -342,6 +373,14 @@ pub unsafe fn reset_handler() {
     )
     .finalize(());
 
+    /* Remote System Call */
+    let remote_mux_spi = components::spi::SpiMuxComponent::new(&sam4l::spi::SPI)
+        .finalize(components::spi_mux_component_helper!(sam4l::spi::SpiHw));
+    let remote_spi = SpiComponent::new(remote_mux_spi, 3)
+        .finalize(components::spi_component_helper!(sam4l::spi::SpiHw));
+    let remote_system_call = static_init!(capsules::system_call_interface::RemoteSystemCall<'static>,
+                                          RemoteSystemCall::new(remote_spi));
+
     let adc = AdcComponent::new(board_kernel).finalize(());
     let gpio = GpioComponent::new(
         board_kernel,
@@ -497,6 +536,7 @@ pub unsafe fn reset_handler() {
         usb_driver,
         nrf51822: nrf_serialization,
         nonvolatile_storage: nonvolatile_storage,
+        remote_system_call: remote_system_call,
     };
 
     let chip = static_init!(sam4l::chip::Sam4l, sam4l::chip::Sam4l::new());

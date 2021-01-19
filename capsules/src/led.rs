@@ -52,8 +52,6 @@
 
 use kernel::hil::gpio;
 use kernel::{AppId, Driver, ReturnCode};
-use crate::system_call_interface::{DetermineRoute, RemoteSystemCall};
-use kernel::hil::spi;
 /// Syscall driver number.
 use crate::driver;
 pub const DRIVER_NUM: usize = driver::NUM::Led as usize;
@@ -92,14 +90,6 @@ impl<P: gpio::Pin> Driver for LED<'_, P> {
     /// - `3`: Toggle the LED at index specified by `data` on or off. Returns
     ///        `EINVAL` if the LED index is not valid.
     fn command(&self, command_num: usize, data: usize, _: usize, _: AppId) -> ReturnCode {
-        let determine_route = DetermineRoute::new(DRIVER_NUM.clone(), 2);
-        if determine_route.determine_route() == 1 {
-          let mut spi_buf : [u8; 5] = [0; 5]; 
-          let mut read_buf : [u8; 5] = [0; 5]; 
-          determine_route.create_read_buffer(command_num, data, 0, &mut spi_buf);
-          /*TODO Incorporate SPI component into main.rs*/
-          let remote_system_call = RemoteSystemCall::new(&mut spi_buf, &mut read_buf, DRIVER_NUM.clone(), 2);
-        }
         let pins_init = self.pins_init.as_ref();
         match command_num {
             // get number of LEDs
