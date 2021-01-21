@@ -641,7 +641,8 @@ impl Kernel {
                             // exhausted its timeslice) allowing the process to
                             // decide how to handle the error.
                             if syscall != Syscall::YIELD {
-                                if let () = platform.remote_syscall(&syscall) {
+                                if let Err(response) = platform.remote_syscall(&syscall) {
+                                    process.set_syscall_return_value(response.into());
                                     continue;
                                 }
 

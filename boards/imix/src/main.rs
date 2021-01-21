@@ -172,9 +172,9 @@ impl kernel::Platform for Imix {
     }
 
     fn remote_syscall(
-        &self, 
+        &self,
         syscall: &syscall::Syscall
-    ) -> () {
+    ) -> Result<(), ReturnCode> {
         /*Note: Only supports LED Capsule and command syscall*/
         match syscall {
             syscall::Syscall::COMMAND {
@@ -184,7 +184,7 @@ impl kernel::Platform for Imix {
                 arg1,
             } => {
                 if self.remote_system_call.determine_route(*driver_number) == 0 {
-                    return;
+                    return Ok(());
                 }
                 let mut buf: [u8; 5] = [0; 5];
                 self.remote_system_call.create_read_buffer(2,
@@ -193,9 +193,10 @@ impl kernel::Platform for Imix {
                                                          *arg0,
                                                          *arg1,
                                                          &mut buf);
-                ()
+                self.remote_system_call.send_data();
+                core::prelude::v1::Err(ReturnCode::FAIL)
             },
-            _ => (),
+            _ => Ok(()),
         }
         /*TODO: Add send_data function*/
     }

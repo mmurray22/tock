@@ -64,8 +64,8 @@ pub trait Platform {
     fn remote_syscall(
         &self,
         _syscall: &syscall::Syscall
-    ) -> () {
-        ()
+    ) -> Result<(), returncode::ReturnCode> {
+        Ok(())
     }
 }
 

@@ -100,12 +100,12 @@ impl<'a> RemoteSystemCall<'a> {
     buf[4] = arg_three.try_into().unwrap();
   }
 
-  pub fn send_data(&self) -> ReturnCode {
+  pub fn send_data(&self, /*spi_buf: &'static mut [u8; 5]*/) -> ReturnCode {
       if self.status.get() == Status::Idle {
           self.pass_buffer.take().map_or_else(
               || panic!("There is no spi pass buffer!"),
               |pass_buffer| {
-                  self.spi.read_write_bytes(pass_buffer, None, 1);
+                  self.spi.read_write_bytes(pass_buf, None, 1);
                   self.status.set(Status::Sending);
               },
           );
