@@ -186,13 +186,11 @@ impl kernel::Platform for Imix {
                 if self.remote_system_call.determine_route(*driver_number) == 0 {
                     return Ok(());
                 }
-                let mut buf: [u8; 5] = [0; 5];
-                self.remote_system_call.create_read_buffer(2,
-                                                         *driver_number,
-                                                         *subdriver_number,
-                                                         *arg0,
-                                                         *arg1,
-                                                         &mut buf);
+                /*self.remote_system_call.fill_buffer(2, 
+                                                    *driver_number,
+                                                    *subdriver_number,
+                                                    *arg0,
+                                                    *arg1);*/
                 self.remote_system_call.send_data();
                 core::prelude::v1::Err(ReturnCode::FAIL)
             },

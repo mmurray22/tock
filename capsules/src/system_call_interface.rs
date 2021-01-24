@@ -12,37 +12,6 @@ use kernel::{debug, ReturnCode};
 // needs to be sent to a remote device. If it can be handled locally, then the 
 // normal system call proceeds and if not, then 
 
-pub struct DetermineRoute {
-  driver_num: usize,
-  system_call_num: usize,
-}
-
-impl DetermineRoute {
-  pub fn new(
-      driver_num: usize,
-      system_call_num: usize
-  ) -> DetermineRoute {
-    DetermineRoute {
-      driver_num: driver_num,
-      system_call_num: system_call_num,
-    }
-  }
-
-  pub fn create_read_buffer(
-      &self, 
-      arg_one: usize, 
-      arg_two: usize, 
-      arg_three: usize, 
-      buf: &mut [u8; 5]) {
-    debug!("Here 1!");
-    buf[0] = self.system_call_num.try_into().unwrap();
-    buf[1] = self.driver_num.try_into().unwrap();
-    buf[2] = arg_one.try_into().unwrap();
-    buf[3] = arg_two.try_into().unwrap();
-    buf[4] = arg_three.try_into().unwrap();
-  }
-}
-
 #[derive(Copy, Clone, PartialEq)]
 enum Status {
   Idle,
@@ -84,28 +53,32 @@ impl<'a> RemoteSystemCall<'a> {
     route
   }
 
-  pub fn create_read_buffer(
+  pub fn fill_buffer(
       &self,
       system_call_num: usize,
       driver_num: usize,
       arg_one: usize, 
       arg_two: usize, 
-      arg_three: usize, 
-      buf: &mut [u8; 5]) {
+      arg_three: usize) {
     debug!("Here 1!");
-    buf[0] = system_call_num.try_into().unwrap();
-    buf[1] = driver_num.try_into().unwrap();
-    buf[2] = arg_one.try_into().unwrap();
-    buf[3] = arg_two.try_into().unwrap();
-    buf[4] = arg_three.try_into().unwrap();
+    self.pass_buffer.take().map_or_else(
+        || panic!("There is no spi pass buffer!"),
+        |pass_buffer| {
+            pass_buffer[0] = system_call_num.try_into().unwrap();
+            pass_buffer[1] = driver_num.try_into().unwrap();
+            pass_buffer[2] = arg_one.try_into().unwrap();
+            pass_buffer[3] = arg_two.try_into().unwrap();
+            pass_buffer[4] = arg_three.try_into().unwrap();
+        },
+    );
   }
 
-  pub fn send_data(&self, /*spi_buf: &'static mut [u8; 5]*/) -> ReturnCode {
+  pub fn send_data(&self) -> ReturnCode {
       if self.status.get() == Status::Idle {
           self.pass_buffer.take().map_or_else(
               || panic!("There is no spi pass buffer!"),
               |pass_buffer| {
-                  self.spi.read_write_bytes(pass_buf, None, 1);
+                  self.spi.read_write_bytes(pass_buffer, None, 1);
                   self.status.set(Status::Sending);
               },
           );
