@@ -600,6 +600,7 @@ impl<'a> USART<'a> {
     }
 
     pub fn handle_interrupt(&self) {
+        
         let usart = &USARTRegManager::new(&self);
 
         let status = usart.registers.csr.extract();

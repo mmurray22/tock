@@ -346,11 +346,17 @@ pub unsafe fn reset_handler() {
     let ninedof = NineDofComponent::new(board_kernel, mux_i2c, &sam4l::gpio::PC[13]).finalize(());
 
     // SPI MUX, SPI syscall driver and RF233 radio
-    let spi_peripheral_device = static_init!(capsules::virtual_spi::VirtualSpiSlaveDevice<'static, sam4l::spi::SpiHw>, capsules::virtual_spi::VirtualSpiSlaveDevice::new(&SPI_PERIPHERAL));
+    let spi_peripheral_device = static_init!(capsules::virtual_spi::VirtualSpiSlaveDevice<'static, sam4l::spi::SpiHw>, 
+                                             capsules::virtual_spi::VirtualSpiSlaveDevice::new(&SPI_PERIPHERAL));
     kernel::hil::spi::SpiSlave::set_client(&SPI_PERIPHERAL, Some(spi_peripheral_device));
     let spi_peripheral = static_init!(capsules::spi_peripheral::SpiPeripheral<'static, capsules::virtual_spi::VirtualSpiSlaveDevice<'static, sam4l::spi::SpiHw>>,
                                       capsules::spi_peripheral::SpiPeripheral::new(spi_peripheral_device));
-        
+    let spi_read_buf = static_init!([u8; 1024], [0; 1024]);
+    let spi_write_buf = static_init!([u8; 1024], [0; 1024]);
+    spi_peripheral.config_buffers(spi_read_buf, spi_write_buf);
+    spi_peripheral_device.set_client(spi_peripheral);
+    kernel::hil::spi::SpiSlave::init(&SPI_PERIPHERAL);
+    SPI_PERIPHERAL.enable(); 
     //let rf233_spi = SpiComponent::new(mux_spi, 3)
       //  .finalize(components::spi_component_helper!(sam4l::spi::SpiHw));
     /*let rf233 = RF233Component::new(

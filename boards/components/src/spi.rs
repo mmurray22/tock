@@ -206,7 +206,7 @@ impl<S: 'static + spi::SpiSlave + kernel::hil::spi::SpiSlaveDevice> Component
             SpiPeripheral<'static, S>,
             SpiPeripheral::new(self.device)
         );
-
+        self.device.set_client(Some(spi_device));
         spi_device
     }
 }

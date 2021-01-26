@@ -260,7 +260,7 @@ impl SpiHw {
         spi.registers.mr.modify(mode + Mode::MODFDIS::SET);
     }
 
-    fn enable(&self) {
+    pub fn enable(&self) {
         let spi = &SpiRegisterManager::new(&self);
 
         spi.registers.cr.write(Control::SPIEN::SET);
@@ -423,11 +423,14 @@ impl SpiHw {
     }
 
     pub fn handle_interrupt(&self) {
+        kernel::debug!("Help :)");
         let spi = &SpiRegisterManager::new(&self);
 
         self.slave_client.map(|client| {
+            kernel::debug!("Help 2 :)");
             if spi.registers.sr.is_set(Status::NSSR) {
                 // NSSR
+                kernel::debug!("Help 3 :)");
                 client.chip_selected()
             }
             // TODO: Do we want to support byte-level interrupts too?
@@ -455,7 +458,7 @@ impl SpiHw {
 
         // Start by enabling the SPI driver.
         self.enable();
-
+   
         // Determine how many bytes to move based on the shortest of the
         // write_buffer length, the read_buffer length, and the user requested
         // len.
@@ -466,14 +469,12 @@ impl SpiHw {
         read_buffer
             .as_ref()
             .map(|buf| count = cmp::min(count, buf.len()));
-
         // Configure DMA to transfer that many bytes.
         self.dma_length.set(count);
 
         // Reset the number of transfers in progress. This is incremented
         // depending on the presence of the read/write below
         self.transfers_in_progress.set(0);
-
         // Only setup the RX channel if we were passed a read_buffer inside
         // of the option. `map()` checks this for us.
         // The read DMA transfer has to be set up before the write because
@@ -681,6 +682,7 @@ impl spi::SpiSlave for SpiHw {
 
 impl DMAClient for SpiHw {
     fn transfer_done(&self, _pid: DMAPeripheral) {
+        kernel::debug!("Transfer done!");
         // Only callback that the transfer is done if either:
         // 1) The transfer was TX only and TX finished
         // 2) The transfer was TX and RX, in that case wait for both of them to complete. Although
