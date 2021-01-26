@@ -64,7 +64,7 @@ mod power;
 // State for loading apps.
 
 const NUM_PROCS: usize = 4;
-
+static mut BUF : [u8; 5] = [0; 5];
 // Constants related to the configuration of the 15.4 network stack
 // TODO: Notably, the radio MAC addresses can be configured from userland at the moment
 // We probably want to change this from a security perspective (multiple apps being
@@ -186,12 +186,13 @@ impl kernel::Platform for Imix {
                 if self.remote_system_call.determine_route(*driver_number) == 0 {
                     return Ok(());
                 }
-                /*self.remote_system_call.fill_buffer(2, 
+                self.remote_system_call.fill_buffer(2, 
                                                     *driver_number,
                                                     *subdriver_number,
                                                     *arg0,
-                                                    *arg1);*/
+                                                    *arg1);
                 self.remote_system_call.send_data();
+                debug!("Here 5!");
                 core::prelude::v1::Err(ReturnCode::FAIL)
             },
             _ => Ok(()),
@@ -358,7 +359,7 @@ pub unsafe fn reset_handler() {
     let mux_spi = components::spi::SpiMuxComponent::new(&sam4l::spi::SPI)
         .finalize(components::spi_mux_component_helper!(sam4l::spi::SpiHw));
 
-    let spi_syscalls = SpiSyscallComponent::new(mux_spi, 3)
+    let spi_syscalls = SpiSyscallComponent::new(mux_spi, 2)
         .finalize(components::spi_syscall_component_helper!(sam4l::spi::SpiHw));
     let rf233_spi = SpiComponent::new(mux_spi, 3)
         .finalize(components::spi_component_helper!(sam4l::spi::SpiHw));
@@ -378,7 +379,7 @@ pub unsafe fn reset_handler() {
     let remote_spi = SpiComponent::new(remote_mux_spi, 3)
         .finalize(components::spi_component_helper!(sam4l::spi::SpiHw));
     let remote_system_call = static_init!(capsules::system_call_interface::RemoteSystemCall<'static>,
-                                          RemoteSystemCall::new(remote_spi));
+                                          RemoteSystemCall::new(&mut BUF, remote_spi));
 
     let adc = AdcComponent::new(board_kernel).finalize(());
     let gpio = GpioComponent::new(

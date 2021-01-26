@@ -51,7 +51,7 @@
 //!   - Return: `SUCCESS` if the LED index was valid, `EINVAL` otherwise.
 
 use kernel::hil::gpio;
-use kernel::{AppId, Driver, ReturnCode};
+use kernel::{AppId, debug, Driver, ReturnCode};
 /// Syscall driver number.
 use crate::driver;
 pub const DRIVER_NUM: usize = driver::NUM::Led as usize;
@@ -90,6 +90,7 @@ impl<P: gpio::Pin> Driver for LED<'_, P> {
     /// - `3`: Toggle the LED at index specified by `data` on or off. Returns
     ///        `EINVAL` if the LED index is not valid.
     fn command(&self, command_num: usize, data: usize, _: usize, _: AppId) -> ReturnCode {
+        debug!("HERE I AM IN THE COMMAND!");
         let pins_init = self.pins_init.as_ref();
         match command_num {
             // get number of LEDs

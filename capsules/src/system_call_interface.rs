@@ -28,16 +28,17 @@ pub struct RemoteSystemCall<'a> {
 
 impl<'a> RemoteSystemCall<'a> {
   pub fn new(
+      pass_buf: &'static mut [u8], 
       spi: &'a dyn spi::SpiMasterDevice,
   ) -> RemoteSystemCall<'a> {
       spi.configure(
           spi::ClockPolarity::IdleLow,
-          spi::ClockPhase::SampleTrailing,
+          spi::ClockPhase::SampleLeading,
           4_000_000
       );
       RemoteSystemCall {
           spi: spi,
-          pass_buffer: TakeCell::empty(),
+          pass_buffer: TakeCell::new(pass_buf),
           write_buffer: TakeCell::empty(),
           read_buffer: TakeCell::empty(),
           status: Cell::new(Status::Idle),
@@ -61,9 +62,10 @@ impl<'a> RemoteSystemCall<'a> {
       arg_two: usize, 
       arg_three: usize) {
     debug!("Here 1!");
-    self.pass_buffer.take().map_or_else(
+    self.pass_buffer.map_or_else(
         || panic!("There is no spi pass buffer!"),
         |pass_buffer| {
+            debug!("Here 2!");
             pass_buffer[0] = system_call_num.try_into().unwrap();
             pass_buffer[1] = driver_num.try_into().unwrap();
             pass_buffer[2] = arg_one.try_into().unwrap();
@@ -75,10 +77,12 @@ impl<'a> RemoteSystemCall<'a> {
 
   pub fn send_data(&self) -> ReturnCode {
       if self.status.get() == Status::Idle {
+          debug!("Here 3!");
           self.pass_buffer.take().map_or_else(
               || panic!("There is no spi pass buffer!"),
               |pass_buffer| {
-                  self.spi.read_write_bytes(pass_buffer, None, 1);
+                  debug!("Here 4!");
+                  self.spi.read_write_bytes(pass_buffer, None, 5);
                   self.status.set(Status::Sending);
               },
           );
