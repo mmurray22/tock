@@ -83,6 +83,7 @@ impl<'a> RemoteSystemCall<'a> {
               |pass_buffer| {
                   debug!("Here 4!");
                   self.spi.read_write_bytes(pass_buffer, None, 5);
+                  debug!("Here intermediate!");
                   self.status.set(Status::Sending);
               },
           );
