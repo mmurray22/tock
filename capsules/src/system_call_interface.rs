@@ -34,7 +34,7 @@ impl<'a> RemoteSystemCall<'a> {
       spi.configure(
           spi::ClockPolarity::IdleLow,
           spi::ClockPhase::SampleLeading,
-          4_000_000
+          400_000
       );
       RemoteSystemCall {
           spi: spi,

@@ -4,7 +4,7 @@ use core::cell::Cell;
 use kernel::common::cells::{OptionalCell, TakeCell};
 use kernel::common::{List, ListLink, ListNode};
 use kernel::hil;
-use kernel::ReturnCode;
+use kernel::{debug, ReturnCode};
 
 /// The Mux struct manages multiple Spi clients. Each client may have
 /// at most one outstanding Spi request.
@@ -38,20 +38,25 @@ impl<'a, Spi: hil::spi::SpiMaster> MuxSpiMaster<'a, Spi> {
     }
 
     fn do_next_op(&self) {
+        debug!("Hi!");
         if self.inflight.is_none() {
+            debug!("ANYTHING????");
             let mnode = self
                 .devices
                 .iter()
                 .find(|node| node.operation.get() != Op::Idle);
             mnode.map(|node| {
+                debug!("NODE 1");
                 self.spi.specify_chip_select(node.chip_select.get());
                 let op = node.operation.get();
                 // Need to set idle here in case callback changes state
                 node.operation.set(Op::Idle);
+                debug!("NODE 2");
                 match op {
                     Op::Configure(cpol, cpal, rate) => {
                         // The `chip_select` type will be correct based on
                         // what implemented `SpiMaster`.
+                        debug!("CONFIGURE");
                         self.spi.set_clock(cpol);
                         self.spi.set_phase(cpal);
                         self.spi.set_rate(rate);
@@ -59,9 +64,12 @@ impl<'a, Spi: hil::spi::SpiMaster> MuxSpiMaster<'a, Spi> {
                     Op::ReadWriteBytes(len) => {
                         // Only async operations want to block by setting
                         // the devices as inflight.
+                        debug!("NODE READ");
                         self.inflight.set(node);
+                        debug!("Do next op map!");
                         node.txbuffer.take().map(|txbuffer| {
                             let rxbuffer = node.rxbuffer.take();
+                            debug!("Spi read write bytes!");
                             self.spi.read_write_bytes(txbuffer, rxbuffer, len);
                         });
                     }
@@ -77,6 +85,7 @@ impl<'a, Spi: hil::spi::SpiMaster> MuxSpiMaster<'a, Spi> {
                     Op::Idle => {} // Can't get here...
                 }
             });
+        debug!("HIIIIIIIIIIIIIII");
         }
     }
 }
@@ -156,10 +165,12 @@ impl<Spi: hil::spi::SpiMaster> hil::spi::SpiMasterDevice for VirtualSpiMasterDev
         read_buffer: Option<&'static mut [u8]>,
         len: usize,
     ) -> ReturnCode {
+        debug!("Read write bytes VirtualMaster!");
         self.txbuffer.replace(write_buffer);
         self.rxbuffer.put(read_buffer);
         self.operation.set(Op::ReadWriteBytes(len));
         self.mux.do_next_op();
+        debug!("VirtualMaster Complete!");
         ReturnCode::SUCCESS
     }
 

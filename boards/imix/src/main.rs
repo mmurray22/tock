@@ -191,7 +191,7 @@ impl kernel::Platform for Imix {
                                                     *subdriver_number,
                                                     *arg0,
                                                     *arg1);
-                self.remote_system_call.send_data();
+                let ret = self.remote_system_call.send_data();
                 debug!("Here 5!");
                 core::prelude::v1::Err(ReturnCode::FAIL)
             },
