@@ -24,11 +24,30 @@ pub struct RemoteSystemCall<'a> {
   write_buffer: TakeCell<'static, [u8]>,
   read_buffer: TakeCell<'static, [u8]>,
   status: Cell<Status>,
+  client: TakeCell<'static, bool>,
+}
+
+impl<'a> spi::SpiMasterClient for RemoteSystemCall<'a> {
+  fn read_write_done(
+      &self,
+      mut _write: &'static mut [u8],
+      mut _read: Option<&'static mut [u8]>,
+      _len: usize,
+    ) {
+      debug!("Client false!");
+      self.client.map_or_else(
+          || panic!("There is no spi pass buffer!"),
+          |client| {
+              *client = false;
+          },
+      );
+  }
 }
 
 impl<'a> RemoteSystemCall<'a> {
   pub fn new(
       pass_buf: &'static mut [u8], 
+      client: &'static mut bool,
       spi: &'a dyn spi::SpiMasterDevice,
   ) -> RemoteSystemCall<'a> {
       spi.configure(
@@ -42,6 +61,7 @@ impl<'a> RemoteSystemCall<'a> {
           write_buffer: TakeCell::empty(),
           read_buffer: TakeCell::empty(),
           status: Cell::new(Status::Idle),
+          client: TakeCell::new(client),
       }
   }
   
@@ -83,6 +103,12 @@ impl<'a> RemoteSystemCall<'a> {
               |pass_buffer| {
                   debug!("Here 4!");
                   self.spi.read_write_bytes(pass_buffer, None, 5);
+                  self.client.map_or_else(
+                      || panic!("There is no spi pass buffer!"),
+                      |client| {
+                          *client = true;
+                      },
+                      );
                   debug!("Here intermediate!");
                   self.status.set(Status::Sending);
               },

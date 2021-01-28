@@ -4,6 +4,7 @@ use crate::pm;
 use core::cell::Cell;
 use core::cmp;
 use core::sync::atomic;
+use kernel::debug;
 use kernel::common::cells::VolatileCell;
 use kernel::common::cells::{OptionalCell, TakeCell};
 use kernel::common::registers::{register_bitfields, ReadOnly, ReadWrite, WriteOnly};
@@ -277,7 +278,9 @@ impl DMAChannel {
 
     pub fn start_transfer(&self) {
         let registers: &DMARegisters = &*self.registers;
+        //debug!("REGISTER REGISTER");
         registers.cr.write(Control::TEN::SET);
+        //debug!("FINISH WRITE?");
     }
 
     pub fn prepare_transfer(&self, pid: DMAPeripheral, buf: &'static mut [u8], mut len: usize) {
@@ -309,6 +312,7 @@ impl DMAChannel {
 
     pub fn do_transfer(&self, pid: DMAPeripheral, buf: &'static mut [u8], len: usize) {
         self.prepare_transfer(pid, buf, len);
+        //debug!("Prep transfer");
         self.start_transfer();
     }
 

@@ -139,6 +139,7 @@ impl<Spi: hil::spi::SpiMaster> hil::spi::SpiMasterClient for VirtualSpiMasterDev
         read_buffer: Option<&'static mut [u8]>,
         len: usize,
     ) {
+        debug!("TALKKKK!");
         self.client.map(move |client| {
             client.read_write_done(write_buffer, read_buffer, len);
         });

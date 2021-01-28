@@ -12,6 +12,7 @@
 
 mod imix_components;
 use capsules::system_call_interface::RemoteSystemCall;
+use kernel::hil::spi::SpiMasterClient;
 use capsules::alarm::AlarmDriver;
 use capsules::net::ieee802154::MacAddress;
 use capsules::net::ipv6::ip_utils::IPAddr;
@@ -65,6 +66,8 @@ mod power;
 
 const NUM_PROCS: usize = 4;
 static mut BUF : [u8; 5] = [0; 5];
+static mut BUF_CLI : [u8; 1] = [0; 1];
+static mut CLIENT : bool = false;
 // Constants related to the configuration of the 15.4 network stack
 // TODO: Notably, the radio MAC addresses can be configured from userland at the moment
 // We probably want to change this from a security perspective (multiple apps being
@@ -192,6 +195,9 @@ impl kernel::Platform for Imix {
                                                     *arg0,
                                                     *arg1);
                 let ret = self.remote_system_call.send_data();
+                unsafe {
+                self.remote_system_call.read_write_done(&mut BUF_CLI, None, 1);
+                }
                 debug!("Here 5!");
                 core::prelude::v1::Err(ReturnCode::FAIL)
             },
@@ -379,7 +385,8 @@ pub unsafe fn reset_handler() {
     let remote_spi = SpiComponent::new(remote_mux_spi, 2)
         .finalize(components::spi_component_helper!(sam4l::spi::SpiHw));
     let remote_system_call = static_init!(capsules::system_call_interface::RemoteSystemCall<'static>,
-                                          RemoteSystemCall::new(&mut BUF, remote_spi));
+                                          RemoteSystemCall::new(&mut BUF, &mut CLIENT, remote_spi));
+    remote_spi.set_client(remote_system_call);
 
     let adc = AdcComponent::new(board_kernel).finalize(());
     let gpio = GpioComponent::new(
