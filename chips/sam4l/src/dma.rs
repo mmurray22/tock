@@ -1,4 +1,5 @@
 //! Implementation of the PDCA DMA peripheral.
+#![feature(core_intrinsics)]
 
 use crate::pm;
 use core::cell::Cell;
@@ -9,6 +10,10 @@ use kernel::common::cells::VolatileCell;
 use kernel::common::cells::{OptionalCell, TakeCell};
 use kernel::common::registers::{register_bitfields, ReadOnly, ReadWrite, WriteOnly};
 use kernel::common::StaticRef;
+
+/*fn print_type_of<T>(_: &T) {
+    debug!("{}", T.print_type());
+}*/
 
 /// Memory registers for a DMA channel. Section 16.6.1 of the datasheet.
 #[repr(C)]
@@ -124,7 +129,7 @@ pub enum DMAChannelNum {
 /// means transfer data from peripheral to memory, `*_TX` means transfer data
 /// from memory to peripheral.
 #[allow(non_camel_case_types)]
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Copy, Clone, PartialEq, Debug)]
 #[repr(u8)]
 pub enum DMAPeripheral {
     USART0_RX = 0,
@@ -203,6 +208,7 @@ pub struct DMAChannel {
 }
 
 pub trait DMAClient {
+    //fn print_tye(&self, );
     fn transfer_done(&self, pid: DMAPeripheral);
 }
 
@@ -270,7 +276,9 @@ impl DMAChannel {
             .idr
             .write(Interrupt::TERR::SET + Interrupt::TRC::SET + Interrupt::RCZ::SET);
         let channel = registers.psr.get();
-
+        if channel == DMAPeripheral::SPI_TX || channel == DMAPeripheral::SPI_RX {
+            debug!("Channel: {:?}", channel);
+        }
         self.client.map(|client| {
             client.transfer_done(channel);
         });
@@ -278,9 +286,7 @@ impl DMAChannel {
 
     pub fn start_transfer(&self) {
         let registers: &DMARegisters = &*self.registers;
-        //debug!("REGISTER REGISTER");
         registers.cr.write(Control::TEN::SET);
-        //debug!("FINISH WRITE?");
     }
 
     pub fn prepare_transfer(&self, pid: DMAPeripheral, buf: &'static mut [u8], mut len: usize) {
@@ -311,8 +317,13 @@ impl DMAChannel {
     }
 
     pub fn do_transfer(&self, pid: DMAPeripheral, buf: &'static mut [u8], len: usize) {
+        if pid == DMAPeripheral::SPI_RX || pid == DMAPeripheral::SPI_TX {
+            debug!("Pid: {:?}, Len: {}", pid, len);
+            for i in 0..buf.len() {
+                debug!("buf[i] = {}", buf[i]);
+            }
+        }
         self.prepare_transfer(pid, buf, len);
-        //debug!("Prep transfer");
         self.start_transfer();
     }
 
@@ -323,6 +334,10 @@ impl DMAChannel {
         registers
             .idr
             .write(Interrupt::TERR::SET + Interrupt::TRC::SET + Interrupt::RCZ::SET);
+        let channel = registers.psr.get();
+        if channel == DMAPeripheral::SPI_TX || channel == DMAPeripheral::SPI_RX {
+            debug!("Channel: {:?}", channel);
+        }
 
         // Reset counter
         registers.tcr.write(TransferCounter::TCV.val(0));

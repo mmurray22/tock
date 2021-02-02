@@ -90,7 +90,7 @@ impl<P: gpio::Pin> Driver for LED<'_, P> {
     /// - `3`: Toggle the LED at index specified by `data` on or off. Returns
     ///        `EINVAL` if the LED index is not valid.
     fn command(&self, command_num: usize, data: usize, _: usize, _: AppId) -> ReturnCode {
-        debug!("HERE I AM IN THE COMMAND!");
+        //debug!("HERE I AM IN THE COMMAND!");
         let pins_init = self.pins_init.as_ref();
         match command_num {
             // get number of LEDs

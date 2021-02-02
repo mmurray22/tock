@@ -34,7 +34,7 @@ impl<'a> spi::SpiMasterClient for RemoteSystemCall<'a> {
       mut _read: Option<&'static mut [u8]>,
       _len: usize,
     ) {
-      debug!("Client false!");
+      //debug!("Client false!");
       self.client.map_or_else(
           || panic!("There is no spi pass buffer!"),
           |client| {
@@ -46,7 +46,8 @@ impl<'a> spi::SpiMasterClient for RemoteSystemCall<'a> {
 
 impl<'a> RemoteSystemCall<'a> {
   pub fn new(
-      pass_buf: &'static mut [u8], 
+      pass_buf: &'static mut [u8],
+      read_buf: &'static mut [u8],
       client: &'static mut bool,
       spi: &'a dyn spi::SpiMasterDevice,
   ) -> RemoteSystemCall<'a> {
@@ -59,7 +60,7 @@ impl<'a> RemoteSystemCall<'a> {
           spi: spi,
           pass_buffer: TakeCell::new(pass_buf),
           write_buffer: TakeCell::empty(),
-          read_buffer: TakeCell::empty(),
+          read_buffer: TakeCell::new(read_buf),
           status: Cell::new(Status::Idle),
           client: TakeCell::new(client),
       }
@@ -81,11 +82,11 @@ impl<'a> RemoteSystemCall<'a> {
       arg_one: usize, 
       arg_two: usize, 
       arg_three: usize) {
-    debug!("Here 1!");
+    //debug!("Here 1!");
     self.pass_buffer.map_or_else(
         || panic!("There is no spi pass buffer!"),
         |pass_buffer| {
-            debug!("Here 2!");
+            //debug!("Here 2!");
             pass_buffer[0] = system_call_num.try_into().unwrap();
             pass_buffer[1] = driver_num.try_into().unwrap();
             pass_buffer[2] = arg_one.try_into().unwrap();
@@ -97,19 +98,16 @@ impl<'a> RemoteSystemCall<'a> {
 
   pub fn send_data(&self) -> ReturnCode {
       if self.status.get() == Status::Idle {
-          debug!("Here 3!");
           self.pass_buffer.take().map_or_else(
               || panic!("There is no spi pass buffer!"),
               |pass_buffer| {
-                  debug!("Here 4!");
-                  self.spi.read_write_bytes(pass_buffer, None, 5);
+                  self.spi.read_write_bytes(pass_buffer, self.read_buffer.take(), 5);        
                   self.client.map_or_else(
                       || panic!("There is no spi pass buffer!"),
                       |client| {
                           *client = true;
                       },
                       );
-                  debug!("Here intermediate!");
                   self.status.set(Status::Sending);
               },
           );

@@ -66,7 +66,8 @@ mod power;
 
 const NUM_PROCS: usize = 4;
 static mut BUF : [u8; 5] = [0; 5];
-static mut BUF_CLI : [u8; 1] = [0; 1];
+static mut BUF_CLI : [u8; 5] = [0; 5];
+static mut BUF_READ : [u8; 5] = [0; 5];
 static mut CLIENT : bool = false;
 // Constants related to the configuration of the 15.4 network stack
 // TODO: Notably, the radio MAC addresses can be configured from userland at the moment
@@ -195,15 +196,11 @@ impl kernel::Platform for Imix {
                                                     *arg0,
                                                     *arg1);
                 let ret = self.remote_system_call.send_data();
-                unsafe {
-                self.remote_system_call.read_write_done(&mut BUF_CLI, None, 1);
-                }
-                debug!("Here 5!");
+                //debug!("Here 5!");
                 core::prelude::v1::Err(ReturnCode::FAIL)
             },
             _ => Ok(()),
         }
-        /*TODO: Add send_data function*/
     }
 }
 
@@ -385,7 +382,7 @@ pub unsafe fn reset_handler() {
     let remote_spi = SpiComponent::new(remote_mux_spi, 2)
         .finalize(components::spi_component_helper!(sam4l::spi::SpiHw));
     let remote_system_call = static_init!(capsules::system_call_interface::RemoteSystemCall<'static>,
-                                          RemoteSystemCall::new(&mut BUF, &mut CLIENT, remote_spi));
+                                          RemoteSystemCall::new(&mut BUF, &mut BUF_CLI, &mut CLIENT, remote_spi));
     remote_spi.set_client(remote_system_call);
 
     let adc = AdcComponent::new(board_kernel).finalize(());
@@ -583,7 +580,7 @@ pub unsafe fn reset_handler() {
     );*/
     //udp_lowpan_test.start();
 
-    debug!("Initialization complete. Entering main loop");
+    //debug!("Initialization complete. Entering main loop");
 
     /// These symbols are defined in the linker script.
     extern "C" {

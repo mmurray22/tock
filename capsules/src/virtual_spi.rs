@@ -38,25 +38,25 @@ impl<'a, Spi: hil::spi::SpiMaster> MuxSpiMaster<'a, Spi> {
     }
 
     fn do_next_op(&self) {
-        debug!("Hi!");
+        //debug!("Hi!");
         if self.inflight.is_none() {
-            debug!("ANYTHING????");
+            //debug!("ANYTHING????");
             let mnode = self
                 .devices
                 .iter()
                 .find(|node| node.operation.get() != Op::Idle);
             mnode.map(|node| {
-                debug!("NODE 1");
+                //debug!("NODE 1");
                 self.spi.specify_chip_select(node.chip_select.get());
                 let op = node.operation.get();
                 // Need to set idle here in case callback changes state
                 node.operation.set(Op::Idle);
-                debug!("NODE 2");
+                //debug!("NODE 2");
                 match op {
                     Op::Configure(cpol, cpal, rate) => {
                         // The `chip_select` type will be correct based on
                         // what implemented `SpiMaster`.
-                        debug!("CONFIGURE");
+                        //debug!("CONFIGURE");
                         self.spi.set_clock(cpol);
                         self.spi.set_phase(cpal);
                         self.spi.set_rate(rate);
@@ -64,12 +64,12 @@ impl<'a, Spi: hil::spi::SpiMaster> MuxSpiMaster<'a, Spi> {
                     Op::ReadWriteBytes(len) => {
                         // Only async operations want to block by setting
                         // the devices as inflight.
-                        debug!("NODE READ");
+                        //debug!("NODE READ");
                         self.inflight.set(node);
-                        debug!("Do next op map!");
+                        //debug!("Do next op map!");
                         node.txbuffer.take().map(|txbuffer| {
                             let rxbuffer = node.rxbuffer.take();
-                            debug!("Spi read write bytes!");
+                            //debug!("Spi read write bytes!");
                             self.spi.read_write_bytes(txbuffer, rxbuffer, len);
                         });
                     }
@@ -85,7 +85,7 @@ impl<'a, Spi: hil::spi::SpiMaster> MuxSpiMaster<'a, Spi> {
                     Op::Idle => {} // Can't get here...
                 }
             });
-        debug!("HIIIIIIIIIIIIIII");
+        //debug!("HIIIIIIIIIIIIIII");
         }
     }
 }
@@ -139,7 +139,7 @@ impl<Spi: hil::spi::SpiMaster> hil::spi::SpiMasterClient for VirtualSpiMasterDev
         read_buffer: Option<&'static mut [u8]>,
         len: usize,
     ) {
-        debug!("TALKKKK!");
+        //debug!("TALKKKK!");
         self.client.map(move |client| {
             client.read_write_done(write_buffer, read_buffer, len);
         });
@@ -166,12 +166,12 @@ impl<Spi: hil::spi::SpiMaster> hil::spi::SpiMasterDevice for VirtualSpiMasterDev
         read_buffer: Option<&'static mut [u8]>,
         len: usize,
     ) -> ReturnCode {
-        debug!("Read write bytes VirtualMaster!");
+        //debug!("Read write bytes VirtualMaster!");
         self.txbuffer.replace(write_buffer);
         self.rxbuffer.put(read_buffer);
         self.operation.set(Op::ReadWriteBytes(len));
         self.mux.do_next_op();
-        debug!("VirtualMaster Complete!");
+        //debug!("VirtualMaster Complete!");
         ReturnCode::SUCCESS
     }
 
