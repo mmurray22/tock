@@ -1,6 +1,4 @@
 //! Implementation of the PDCA DMA peripheral.
-#![feature(core_intrinsics)]
-
 use crate::pm;
 use core::cell::Cell;
 use core::cmp;
@@ -10,10 +8,6 @@ use kernel::common::cells::VolatileCell;
 use kernel::common::cells::{OptionalCell, TakeCell};
 use kernel::common::registers::{register_bitfields, ReadOnly, ReadWrite, WriteOnly};
 use kernel::common::StaticRef;
-
-/*fn print_type_of<T>(_: &T) {
-    debug!("{}", T.print_type());
-}*/
 
 /// Memory registers for a DMA channel. Section 16.6.1 of the datasheet.
 #[repr(C)]

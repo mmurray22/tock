@@ -21,7 +21,6 @@ enum Status {
 pub struct RemoteSystemCall<'a> {
   spi: &'a dyn spi::SpiMasterDevice,
   pass_buffer: TakeCell<'static, [u8]>,
-  write_buffer: TakeCell<'static, [u8]>,
   read_buffer: TakeCell<'static, [u8]>,
   status: Cell<Status>,
   client: TakeCell<'static, bool>,
@@ -34,7 +33,7 @@ impl<'a> spi::SpiMasterClient for RemoteSystemCall<'a> {
       mut _read: Option<&'static mut [u8]>,
       _len: usize,
     ) {
-      //debug!("Client false!");
+      debug!("Client false!");
       self.client.map_or_else(
           || panic!("There is no spi pass buffer!"),
           |client| {
@@ -59,7 +58,6 @@ impl<'a> RemoteSystemCall<'a> {
       RemoteSystemCall {
           spi: spi,
           pass_buffer: TakeCell::new(pass_buf),
-          write_buffer: TakeCell::empty(),
           read_buffer: TakeCell::new(read_buf),
           status: Cell::new(Status::Idle),
           client: TakeCell::new(client),

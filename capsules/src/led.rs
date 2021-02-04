@@ -51,7 +51,7 @@
 //!   - Return: `SUCCESS` if the LED index was valid, `EINVAL` otherwise.
 
 use kernel::hil::gpio;
-use kernel::{AppId, debug, Driver, ReturnCode};
+use kernel::{AppId, Driver, ReturnCode};
 /// Syscall driver number.
 use crate::driver;
 pub const DRIVER_NUM: usize = driver::NUM::Led as usize;

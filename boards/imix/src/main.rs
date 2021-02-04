@@ -12,18 +12,18 @@
 
 mod imix_components;
 use capsules::system_call_interface::RemoteSystemCall;
-use kernel::hil::spi::SpiMasterClient;
+//use kernel::hil::spi::SpiMasterClient;
 use capsules::alarm::AlarmDriver;
-use capsules::net::ieee802154::MacAddress;
-use capsules::net::ipv6::ip_utils::IPAddr;
+//use capsules::net::ieee802154::MacAddress;
+//use capsules::net::ipv6::ip_utils::IPAddr;
 use capsules::virtual_alarm::VirtualMuxAlarm;
 use capsules::virtual_i2c::MuxI2C;
-use capsules::virtual_spi::VirtualSpiMasterDevice;
+//use capsules::virtual_spi::VirtualSpiMasterDevice;
 use kernel::{capabilities, ReturnCode, syscall};
 use kernel::common::dynamic_deferred_call::{DynamicDeferredCall, DynamicDeferredCallClientState};
 use kernel::component::Component;
 use kernel::hil::i2c::I2CMaster;
-use kernel::hil::radio;
+//use kernel::hil::radio;
 #[allow(unused_imports)]
 use kernel::hil::radio::{RadioConfig, RadioData};
 use kernel::hil::Controller;
@@ -42,12 +42,13 @@ use components::nrf51822::Nrf51822Component;
 use components::process_console::ProcessConsoleComponent;
 use components::rng::RngComponent;
 use components::si7021::{HumidityComponent, SI7021Component};
-use components::spi::{SpiComponent, SpiSyscallComponent};
+use components::spi::SpiComponent;
+//use components::spi::SpiSyscallComponent;
 use imix_components::adc::AdcComponent;
 use imix_components::fxos8700::NineDofComponent;
 //use imix_components::rf233::RF233Component;
-use imix_components::udp_driver::UDPDriverComponent;
-use imix_components::udp_mux::UDPMuxComponent;
+//use imix_components::udp_driver::UDPDriverComponent;
+//use imix_components::udp_mux::UDPMuxComponent;
 use imix_components::usb::UsbComponent;
 
 /// Support routines for debugging I/O.
@@ -67,7 +68,6 @@ mod power;
 const NUM_PROCS: usize = 4;
 static mut BUF : [u8; 5] = [0; 5];
 static mut BUF_CLI : [u8; 5] = [0; 5];
-static mut BUF_READ : [u8; 5] = [0; 5];
 static mut CLIENT : bool = false;
 // Constants related to the configuration of the 15.4 network stack
 // TODO: Notably, the radio MAC addresses can be configured from userland at the moment
@@ -77,11 +77,12 @@ static mut CLIENT : bool = false;
 // have those devices talk to each other without having to modify the kernel flashed
 // onto each device. This makes MAC address configuration a good target for capabilities -
 // only allow one app per board to have control of MAC address configuration?
-const RADIO_CHANNEL: u8 = 26;
+/*const RADIO_CHANNEL: u8 = 26;
 const DST_MAC_ADDR: MacAddress = MacAddress::Short(49138);
 const DEFAULT_CTX_PREFIX_LEN: u8 = 8; //Length of context for 6LoWPAN compression
 const DEFAULT_CTX_PREFIX: [u8; 16] = [0x0 as u8; 16]; //Context for 6LoWPAN Compression
 const PAN_ID: u16 = 0xABCD;
+*/
 
 // how should the kernel respond when a process faults
 const FAULT_RESPONSE: kernel::procs::FaultResponse = kernel::procs::FaultResponse::Panic;
@@ -141,9 +142,10 @@ struct Imix {
 //   3 + 4: two small buffers for performing registers
 //      operations (one read, one write).
 
-static mut RF233_BUF: [u8; radio::MAX_BUF_SIZE] = [0x00; radio::MAX_BUF_SIZE];
+/*static mut RF233_BUF: [u8; radio::MAX_BUF_SIZE] = [0x00; radio::MAX_BUF_SIZE];
 static mut RF233_REG_WRITE: [u8; 2] = [0x00; 2];
 static mut RF233_REG_READ: [u8; 2] = [0x00; 2];
+*/
 
 impl kernel::Platform for Imix {
     fn with_driver<F, R>(&self, driver_num: usize, f: F) -> R
@@ -195,7 +197,7 @@ impl kernel::Platform for Imix {
                                                     *subdriver_number,
                                                     *arg0,
                                                     *arg1);
-                let ret = self.remote_system_call.send_data();
+                self.remote_system_call.send_data();
                 //debug!("Here 5!");
                 core::prelude::v1::Err(ReturnCode::FAIL)
             },
@@ -358,25 +360,7 @@ pub unsafe fn reset_handler() {
     let humidity = HumidityComponent::new(board_kernel, si7021).finalize(());
     let ninedof = NineDofComponent::new(board_kernel, mux_i2c, &sam4l::gpio::PC[13]).finalize(());
 
-    // SPI MUX, SPI syscall driver and RF233 radio
-    /*let mux_spi = components::spi::SpiMuxComponent::new(&sam4l::spi::SPI)
-        .finalize(components::spi_mux_component_helper!(sam4l::spi::SpiHw));
-
-    let spi_syscalls = SpiSyscallComponent::new(mux_spi, 2)
-        .finalize(components::spi_syscall_component_helper!(sam4l::spi::SpiHw));*/
-    /*let rf233_spi = SpiComponent::new(mux_spi, 3)
-        .finalize(components::spi_component_helper!(sam4l::spi::SpiHw));
-    let rf233 = RF233Component::new(
-        rf233_spi,
-        &sam4l::gpio::PA[09], // reset
-        &sam4l::gpio::PA[10], // sleep
-        &sam4l::gpio::PA[08], // irq
-        &sam4l::gpio::PA[08],
-        RADIO_CHANNEL,
-    )
-    .finalize(());*/
-
-    /* Remote System Call */
+    /*TODO: Remote System Call */
     let remote_mux_spi = components::spi::SpiMuxComponent::new(&sam4l::spi::SPI)
         .finalize(components::spi_mux_component_helper!(sam4l::spi::SpiHw));
     let remote_spi = SpiComponent::new(remote_mux_spi, 2)
@@ -384,6 +368,7 @@ pub unsafe fn reset_handler() {
     let remote_system_call = static_init!(capsules::system_call_interface::RemoteSystemCall<'static>,
                                           RemoteSystemCall::new(&mut BUF, &mut BUF_CLI, &mut CLIENT, remote_spi));
     remote_spi.set_client(remote_system_call);
+    /*TODO: Remote System Call*/
 
     let adc = AdcComponent::new(board_kernel).finalize(());
     let gpio = GpioComponent::new(
@@ -441,9 +426,9 @@ pub unsafe fn reset_handler() {
     // of the serial number of the sam4l for this device.  In the
     // future, we could generate the MAC address by hashing the full
     // 120-bit serial number
-    let serial_num: sam4l::serial_num::SerialNum = sam4l::serial_num::SerialNum::new();
-    let serial_num_bottom_16 = (serial_num.get_lower_64() & 0x0000_0000_0000_ffff) as u16;
-    let src_mac_from_serial_num: MacAddress = MacAddress::Short(serial_num_bottom_16);
+ //   let serial_num: sam4l::serial_num::SerialNum = sam4l::serial_num::SerialNum::new();
+ //   let serial_num_bottom_16 = (serial_num.get_lower_64() & 0x0000_0000_0000_ffff) as u16;
+ //   let src_mac_from_serial_num: MacAddress = MacAddress::Short(serial_num_bottom_16);
 
     // Can this initialize be pushed earlier, or into component? -pal
     /*rf233.initialize(&mut RF233_BUF, &mut RF233_REG_WRITE, &mut RF233_REG_READ);
@@ -481,7 +466,7 @@ pub unsafe fn reset_handler() {
         sam4l::flashcalw::FLASHCALW
     ));
 
-    let local_ip_ifaces = static_init!(
+    /*let local_ip_ifaces = static_init!(
         [IPAddr; 3],
         [
             IPAddr([
@@ -494,7 +479,7 @@ pub unsafe fn reset_handler() {
             ]),
             IPAddr::generate_from_mac(src_mac_from_serial_num),
         ]
-    );
+    );*/
 
     /*let (udp_send_mux, udp_recv_mux, udp_port_table) = UDPMuxComponent::new(
         mux_mac,
