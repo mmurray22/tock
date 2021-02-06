@@ -565,7 +565,7 @@ pub unsafe fn reset_handler() {
     );*/
     //udp_lowpan_test.start();
 
-    //debug!("Initialization complete. Entering main loop");
+    debug!("Initialization complete. Entering main loop");
 
     /// These symbols are defined in the linker script.
     extern "C" {
