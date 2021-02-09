@@ -30,6 +30,7 @@ pub struct RF233Component {
     channel: u8,
 }
 
+#[allow(dead_code)]
 impl RF233Component {
     pub fn new(
         spi: &'static VirtualSpiMasterDevice<'static, sam4l::spi::SpiHw>,

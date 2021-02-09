@@ -12,22 +12,22 @@
 
 mod imix_components;
 use capsules::alarm::AlarmDriver;
-use capsules::net::ieee802154::MacAddress;
-use capsules::net::ipv6::ip_utils::IPAddr;
+//use capsules::net::ieee802154::MacAddress;
+//use capsules::net::ipv6::ip_utils::IPAddr;
 use capsules::virtual_alarm::VirtualMuxAlarm;
 use capsules::virtual_i2c::MuxI2C;
-use capsules::virtual_spi::VirtualSpiMasterDevice;
+//use capsules::virtual_spi::VirtualSpiMasterDevice;
 //use capsules::virtual_timer::MuxTimer;
 use kernel::capabilities;
 use kernel::common::dynamic_deferred_call::{DynamicDeferredCall, DynamicDeferredCallClientState};
 use kernel::component::Component;
 use kernel::hil::i2c::I2CMaster;
-use kernel::hil::radio;
+//use kernel::hil::radio;
 #[allow(unused_imports)]
 use kernel::hil::radio::{RadioConfig, RadioData};
 //use kernel::hil::time::Alarm;
 use kernel::hil::Controller;
-use kernel::hil::spi::{self, SpiSlave};
+//use kernel::hil::spi::{self, SpiSlave};
 #[allow(unused_imports)]
 use kernel::{create_capability, debug, debug_gpio, static_init};
 
@@ -43,7 +43,7 @@ use components::nrf51822::Nrf51822Component;
 use components::process_console::ProcessConsoleComponent;
 use components::rng::RngComponent;
 use components::si7021::{HumidityComponent, SI7021Component};
-use components::spi::{SpiComponent, SpiSyscallComponent, SpiPeripheralComponent};
+//use components::spi::{SpiComponent, SpiSyscallComponent, SpiPeripheralComponent};
 use imix_components::adc::AdcComponent;
 use imix_components::fxos8700::NineDofComponent;
 //use imix_components::nonvolatile_storage::NonvolatileStorageComponent;
@@ -88,11 +88,11 @@ const NUM_PROCS: usize = 4;
 // have those devices talk to each other without having to modify the kernel flashed
 // onto each device. This makes MAC address configuration a good target for capabilities -
 // only allow one app per board to have control of MAC address configuration?
-const RADIO_CHANNEL: u8 = 26;
+/*const RADIO_CHANNEL: u8 = 26;
 const DST_MAC_ADDR: MacAddress = MacAddress::Short(49138);
 const DEFAULT_CTX_PREFIX_LEN: u8 = 8; //Length of context for 6LoWPAN compression
 const DEFAULT_CTX_PREFIX: [u8; 16] = [0x0 as u8; 16]; //Context for 6LoWPAN Compression
-const PAN_ID: u16 = 0xABCD;
+const PAN_ID: u16 = 0xABCD;*/
 
 // how should the kernel respond when a process faults
 const FAULT_RESPONSE: kernel::procs::FaultResponse = kernel::procs::FaultResponse::Panic;
@@ -158,9 +158,9 @@ struct Imix {
 //   3 + 4: two small buffers for performing registers
 //      operations (one read, one write).
 
-static mut RF233_BUF: [u8; radio::MAX_BUF_SIZE] = [0x00; radio::MAX_BUF_SIZE];
+/*static mut RF233_BUF: [u8; radio::MAX_BUF_SIZE] = [0x00; radio::MAX_BUF_SIZE];
 static mut RF233_REG_WRITE: [u8; 2] = [0x00; 2];
-static mut RF233_REG_READ: [u8; 2] = [0x00; 2];
+static mut RF233_REG_READ: [u8; 2] = [0x00; 2];*/
 
 impl kernel::Platform for Imix {
     fn with_driver<F, R>(&self, driver_num: usize, f: F) -> R
@@ -425,9 +425,9 @@ pub unsafe fn reset_handler() {
     // of the serial number of the sam4l for this device.  In the
     // future, we could generate the MAC address by hashing the full
     // 120-bit serial number
-    let serial_num: sam4l::serial_num::SerialNum = sam4l::serial_num::SerialNum::new();
-    let serial_num_bottom_16 = (serial_num.get_lower_64() & 0x0000_0000_0000_ffff) as u16;
-    let src_mac_from_serial_num: MacAddress = MacAddress::Short(serial_num_bottom_16);
+  //  let serial_num: sam4l::serial_num::SerialNum = sam4l::serial_num::SerialNum::new();
+  //  let serial_num_bottom_16 = (serial_num.get_lower_64() & 0x0000_0000_0000_ffff) as u16;
+ //   let src_mac_from_serial_num: MacAddress = MacAddress::Short(serial_num_bottom_16);
 
     // Can this initialize be pushed earlier, or into component? -pal
     /*rf233.initialize(&mut RF233_BUF, &mut RF233_REG_WRITE, &mut RF233_REG_READ);
@@ -466,7 +466,7 @@ pub unsafe fn reset_handler() {
         sam4l::flashcalw::FLASHCALW
     ));
 
-    let local_ip_ifaces = static_init!(
+ /*   let local_ip_ifaces = static_init!(
         [IPAddr; 3],
         [
             IPAddr([
@@ -479,7 +479,7 @@ pub unsafe fn reset_handler() {
             ]),
             IPAddr::generate_from_mac(src_mac_from_serial_num),
         ]
-    );
+    );*/
 
     /*let (udp_send_mux, udp_recv_mux, udp_port_table) = UDPMuxComponent::new(
         //mux_mac,
