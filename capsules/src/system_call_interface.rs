@@ -50,11 +50,6 @@ impl<'a> RemoteSystemCall<'a> {
       client: &'static mut bool,
       spi: &'a dyn spi::SpiMasterDevice,
   ) -> RemoteSystemCall<'a> {
-      spi.configure(
-          spi::ClockPolarity::IdleLow,
-          spi::ClockPhase::SampleLeading,
-          400_000
-      );
       RemoteSystemCall {
           spi: spi,
           pass_buffer: TakeCell::new(pass_buf),
@@ -62,6 +57,14 @@ impl<'a> RemoteSystemCall<'a> {
           status: Cell::new(Status::Idle),
           client: TakeCell::new(client),
       }
+  }
+
+  pub fn configure(&self) {
+      self.spi.configure(
+          spi::ClockPolarity::IdleLow,
+          spi::ClockPhase::SampleLeading,
+          400_000
+      );
   }
   
   pub fn determine_route(&self, driver: usize) -> usize {

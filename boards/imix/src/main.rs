@@ -198,7 +198,6 @@ impl kernel::Platform for Imix {
                                                     *arg0,
                                                     *arg1);
                 self.remote_system_call.send_data();
-                //debug!("Here 5!");
                 core::prelude::v1::Err(ReturnCode::FAIL)
             },
             _ => Ok(()),
@@ -368,6 +367,7 @@ pub unsafe fn reset_handler() {
     let remote_system_call = static_init!(capsules::system_call_interface::RemoteSystemCall<'static>,
                                           RemoteSystemCall::new(&mut BUF, &mut BUF_CLI, &mut CLIENT, remote_spi));
     remote_spi.set_client(remote_system_call);
+    remote_system_call.configure();
     /*TODO: Remote System Call*/
 
     let adc = AdcComponent::new(board_kernel).finalize(());
