@@ -1,7 +1,6 @@
 //! Reroutes system calls to remote tockOS devices if the particular request cannot be met on this
 //! device
 use core::cell::Cell;
-use core::convert::TryInto;
 use crate::driver;
 use kernel::common::cells::{TakeCell};
 use kernel::hil::spi;
@@ -22,6 +21,7 @@ pub struct RemoteSystemCall<'a> {
   spi: &'a dyn spi::SpiMasterDevice,
   pass_buffer: TakeCell<'static, [u8]>,
   read_buffer: TakeCell<'static, [u8]>,
+  data_buffer: TakeCell<'static, [u32]>,
   status: Cell<Status>,
   client: TakeCell<'static, bool>,
 }
@@ -33,7 +33,7 @@ impl<'a> spi::SpiMasterClient for RemoteSystemCall<'a> {
       mut _read: Option<&'static mut [u8]>,
       _len: usize,
     ) {
-      debug!("Client false!");
+      debug!("Client!");
       self.client.map_or_else(
           || panic!("There is no spi pass buffer!"),
           |client| {
@@ -47,6 +47,7 @@ impl<'a> RemoteSystemCall<'a> {
   pub fn new(
       pass_buf: &'static mut [u8],
       read_buf: &'static mut [u8],
+      data_buf: &'static mut [u32],
       client: &'static mut bool,
       spi: &'a dyn spi::SpiMasterDevice,
   ) -> RemoteSystemCall<'a> {
@@ -54,6 +55,7 @@ impl<'a> RemoteSystemCall<'a> {
           spi: spi,
           pass_buffer: TakeCell::new(pass_buf),
           read_buffer: TakeCell::new(read_buf),
+          data_buffer: TakeCell::new(data_buf),
           status: Cell::new(Status::Idle),
           client: TakeCell::new(client),
       }
@@ -83,26 +85,39 @@ impl<'a> RemoteSystemCall<'a> {
       arg_one: usize, 
       arg_two: usize, 
       arg_three: usize) {
-    //debug!("Here 1!");
-    self.pass_buffer.map_or_else(
+    self.data_buffer.map_or_else(
         || panic!("There is no spi pass buffer!"),
-        |pass_buffer| {
-            //debug!("Here 2!");
-            pass_buffer[0] = system_call_num.try_into().unwrap();
-            pass_buffer[1] = driver_num.try_into().unwrap();
-            pass_buffer[2] = arg_one.try_into().unwrap();
-            pass_buffer[3] = arg_two.try_into().unwrap();
-            pass_buffer[4] = arg_three.try_into().unwrap();
+        |data_buffer| {
+            data_buffer[0] = system_call_num as u32;
+            data_buffer[1] = driver_num as u32;
+            data_buffer[2] = arg_one as u32;
+            data_buffer[3] = arg_two as u32;
+            data_buffer[4] = arg_three as u32;
         },
     );
   }
 
+  /*fn transform_u32_to_u8_array(&self, y: u32) -> [u8; 4]{
+      let b1 = ((y >> 24) & 0xff) as u8;
+      let b2 = ((y >> 16) & 0xff) as u8;
+      let b3 = ((y >> 8) & 0xff) as u8;
+      let b4 = (y & 0xff) as u8;
+      [b1, b2, b3, b4]
+  } */
+
   pub fn send_data(&self) -> ReturnCode {
       if self.status.get() == Status::Idle {
+          self.data_buffer.take().map_or_else(
+              || panic!("There is no data buffer!"),
+              |data_buffer| {
+                  self.pass_buffer.replace(data_buffer);
+              }
+          );
           self.pass_buffer.take().map_or_else(
               || panic!("There is no spi pass buffer!"),
               |pass_buffer| {
-                  self.spi.read_write_bytes(pass_buffer, self.read_buffer.take(), 5);        
+                  
+                  self.spi.read_write_bytes(pass_buffer, self.read_buffer.take(), pass_buffer.len());        
                   self.client.map_or_else(
                       || panic!("There is no spi pass buffer!"),
                       |client| {

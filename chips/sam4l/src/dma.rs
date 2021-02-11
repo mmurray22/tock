@@ -313,9 +313,6 @@ impl DMAChannel {
     pub fn do_transfer(&self, pid: DMAPeripheral, buf: &'static mut [u8], len: usize) {
         if pid == DMAPeripheral::SPI_RX || pid == DMAPeripheral::SPI_TX {
             debug!("Pid: {:?}, Len: {}", pid, len);
-            for i in 0..buf.len() {
-                debug!("buf[i] = {}", buf[i]);
-            }
         }
         self.prepare_transfer(pid, buf, len);
         self.start_transfer();

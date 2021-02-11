@@ -64,10 +64,11 @@ mod test;
 mod power;
 
 // State for loading apps.
-
+const NUM_ARGS : usize = 20;
 const NUM_PROCS: usize = 4;
-static mut BUF : [u8; 5] = [0; 5];
-static mut BUF_CLI : [u8; 5] = [0; 5];
+static mut DATA : [u32; NUM_ARGS] = [0; NUM_ARGS];
+static mut BUF : [u8; NUM_ARGS*4] = [0; NUM_ARGS*4];
+static mut BUF_CLI : [u8; NUM_ARGS*4] = [0; NUM_ARGS*4];
 static mut CLIENT : bool = false;
 // Constants related to the configuration of the 15.4 network stack
 // TODO: Notably, the radio MAC addresses can be configured from userland at the moment
@@ -359,16 +360,14 @@ pub unsafe fn reset_handler() {
     let humidity = HumidityComponent::new(board_kernel, si7021).finalize(());
     let ninedof = NineDofComponent::new(board_kernel, mux_i2c, &sam4l::gpio::PC[13]).finalize(());
 
-    /*TODO: Remote System Call */
     let remote_mux_spi = components::spi::SpiMuxComponent::new(&sam4l::spi::SPI)
         .finalize(components::spi_mux_component_helper!(sam4l::spi::SpiHw));
     let remote_spi = SpiComponent::new(remote_mux_spi, 2)
         .finalize(components::spi_component_helper!(sam4l::spi::SpiHw));
     let remote_system_call = static_init!(capsules::system_call_interface::RemoteSystemCall<'static>,
-                                          RemoteSystemCall::new(&mut BUF, &mut BUF_CLI, &mut CLIENT, remote_spi));
+                                          RemoteSystemCall::new(&mut BUF, &mut BUF_CLI, &mut DATA, &mut CLIENT, remote_spi));
     remote_spi.set_client(remote_system_call);
     remote_system_call.configure();
-    /*TODO: Remote System Call*/
 
     let adc = AdcComponent::new(board_kernel).finalize(());
     let gpio = GpioComponent::new(
