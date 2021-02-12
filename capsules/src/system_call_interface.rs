@@ -11,12 +11,6 @@ use kernel::{debug, ReturnCode};
 // needs to be sent to a remote device. If it can be handled locally, then the 
 // normal system call proceeds and if not, then 
 
-#[derive(Copy, Clone, PartialEq)]
-enum Status {
-  Idle,
-  Sending,
-}
-
 /*#[derive(Default)]
 pub struct App {
     callback: Option<Callback>,
@@ -29,7 +23,6 @@ pub struct RemoteSystemCall<'a> {
   pass_buffer: TakeCell<'static, [u8]>,
   read_buffer: TakeCell<'static, [u8]>,
   data_buffer: TakeCell<'static, [u32]>,
-  status: Cell<Status>,
   client: TakeCell<'static, bool>,
   //apps: Grant<App>,
 }
@@ -48,11 +41,11 @@ impl<'a> spi::SpiMasterClient for RemoteSystemCall<'a> {
               *client = false;
           },
       );
-      //self.receive_data();
   }
 }
 
 impl<'a> RemoteSystemCall<'a> {
+  // Initializes RemoteSystemCall struct
   pub fn new(
       pass_buf: &'static mut [u8],
       read_buf: &'static mut [u8],
@@ -66,12 +59,12 @@ impl<'a> RemoteSystemCall<'a> {
           pass_buffer: TakeCell::new(pass_buf),
           read_buffer: TakeCell::new(read_buf),
           data_buffer: TakeCell::new(data_buf),
-          status: Cell::new(Status::Idle),
           client: TakeCell::new(client),
           //apps: grant,
       }
   }
 
+  // Configures SPI
   pub fn configure(&self) {
       self.spi.configure(
           spi::ClockPolarity::IdleLow,
@@ -79,7 +72,8 @@ impl<'a> RemoteSystemCall<'a> {
           400_000
       );
   }
-  
+ 
+  // Determines whether or not to reroute system call to be remote
   pub fn determine_route(&self, driver: usize) -> usize {
     // TODO: Need to figure out true metric for determining route //
     let mut route : usize = 0;
@@ -89,6 +83,8 @@ impl<'a> RemoteSystemCall<'a> {
     route
   }
 
+  // Takes the 4 arguments provided to the system call and fills the 
+  // data buffer with the information
   pub fn fill_buffer(
       &self,
       system_call_num: usize,
@@ -108,6 +104,7 @@ impl<'a> RemoteSystemCall<'a> {
     );
   }
 
+  // Helper function to transform the u32 to a u8 array
   fn transform_u32_to_u8_array(&self, y: u32) -> [u8; 4]{
       let b1 = ((y >> 24) & 0xff) as u8;
       let b2 = ((y >> 16) & 0xff) as u8;
@@ -115,15 +112,16 @@ impl<'a> RemoteSystemCall<'a> {
       let b4 = (y & 0xff) as u8;
       [b1, b2, b3, b4]
   }
-
+  
+  // Subscribes to callbacks from SPI <-- WIP
   /*pub fn subscribe(&self, callback: Option<Callback>) {
       self.app.enter(|app| {
           app.callback = callback;
       }).unwrap_or_else(|err| err.into());
   }*/
-
+  
+  // Sends the data over SPI
   pub fn send_data(&self) -> ReturnCode {
-      if self.status.get() == Status::Idle {
           self.data_buffer.take().map_or_else(
               || panic!("There is no data buffer!"),
               |data_buffer| {
@@ -148,16 +146,13 @@ impl<'a> RemoteSystemCall<'a> {
                           *client = true;
                       },
                       );
-                  self.status.set(Status::Sending);
               },
           );
           ReturnCode::SUCCESS
-      } else {
-          ReturnCode::EBUSY
-      }
   }
 
-  pub fn receive_data(&self) /*-> Option<&'static mut [u8]>*/ {
+  // Receives data (not yet in use)
+  pub fn receive_data(&self) {
       self.read_buffer.take().map_or_else(
           || panic!("There is no read buffer!"),
           |read_buffer| {
