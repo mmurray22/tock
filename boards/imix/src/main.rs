@@ -177,6 +177,11 @@ impl kernel::Platform for Imix {
             _ => f(None),
         }
     }
+    fn remote_syscall_cb(
+        &self,
+        ) -> Result<(), ReturnCode> {
+        Ok(())
+    }
 
     fn remote_syscall(
         &self,
@@ -198,6 +203,7 @@ impl kernel::Platform for Imix {
                                                     *subdriver_number,
                                                     *arg0,
                                                     *arg1);
+                //self.remote_system_call.subscribe(remote_syscall_cb);
                 self.remote_system_call.send_data();
                 core::prelude::v1::Err(ReturnCode::FAIL)
             },

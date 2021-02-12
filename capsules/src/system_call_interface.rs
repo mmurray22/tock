@@ -17,6 +17,13 @@ enum Status {
   Sending,
 }
 
+/*#[derive(Default)]
+pub struct App {
+    callback: Option<Callback>,
+    subscribed: bool,
+}*/
+
+
 pub struct RemoteSystemCall<'a> {
   spi: &'a dyn spi::SpiMasterDevice,
   pass_buffer: TakeCell<'static, [u8]>,
@@ -24,6 +31,7 @@ pub struct RemoteSystemCall<'a> {
   data_buffer: TakeCell<'static, [u32]>,
   status: Cell<Status>,
   client: TakeCell<'static, bool>,
+  //apps: Grant<App>,
 }
 
 impl<'a> spi::SpiMasterClient for RemoteSystemCall<'a> {
@@ -40,6 +48,7 @@ impl<'a> spi::SpiMasterClient for RemoteSystemCall<'a> {
               *client = false;
           },
       );
+      //self.receive_data();
   }
 }
 
@@ -50,6 +59,7 @@ impl<'a> RemoteSystemCall<'a> {
       data_buf: &'static mut [u32],
       client: &'static mut bool,
       spi: &'a dyn spi::SpiMasterDevice,
+      //apps: Grant<App>
   ) -> RemoteSystemCall<'a> {
       RemoteSystemCall {
           spi: spi,
@@ -58,6 +68,7 @@ impl<'a> RemoteSystemCall<'a> {
           data_buffer: TakeCell::new(data_buf),
           status: Cell::new(Status::Idle),
           client: TakeCell::new(client),
+          //apps: grant,
       }
   }
 
@@ -97,20 +108,33 @@ impl<'a> RemoteSystemCall<'a> {
     );
   }
 
-  /*fn transform_u32_to_u8_array(&self, y: u32) -> [u8; 4]{
+  fn transform_u32_to_u8_array(&self, y: u32) -> [u8; 4]{
       let b1 = ((y >> 24) & 0xff) as u8;
       let b2 = ((y >> 16) & 0xff) as u8;
       let b3 = ((y >> 8) & 0xff) as u8;
       let b4 = (y & 0xff) as u8;
       [b1, b2, b3, b4]
-  } */
+  }
+
+  /*pub fn subscribe(&self, callback: Option<Callback>) {
+      self.app.enter(|app| {
+          app.callback = callback;
+      }).unwrap_or_else(|err| err.into());
+  }*/
 
   pub fn send_data(&self) -> ReturnCode {
       if self.status.get() == Status::Idle {
           self.data_buffer.take().map_or_else(
               || panic!("There is no data buffer!"),
               |data_buffer| {
-                  self.pass_buffer.replace(data_buffer);
+                  self.pass_buffer.map(|pass_buffer| {
+                    for i in 0..data_buffer.len() {
+                        let temp_arr = self.transform_u32_to_u8_array(data_buffer[i]);
+                        for j in 0..4 {
+                            pass_buffer[j + 4*i] = temp_arr[j]; 
+                        }
+                    }
+                  });
               }
           );
           self.pass_buffer.take().map_or_else(
@@ -133,11 +157,14 @@ impl<'a> RemoteSystemCall<'a> {
       }
   }
 
-  pub fn receive_data(&self) -> Option<&'static mut [u8]> {
-      if self.status.get() == Status::Sending {
-        self.read_buffer.take()
-      } else {
-          None
-      }
+  pub fn receive_data(&self) /*-> Option<&'static mut [u8]>*/ {
+      self.read_buffer.take().map_or_else(
+          || panic!("There is no read buffer!"),
+          |read_buffer| {
+              for i in 0..read_buffer.len() {
+                  debug!("{}", read_buffer[i]);
+              }
+          }
+      );
   }
 }
