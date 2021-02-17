@@ -1,9 +1,12 @@
 //! Reroutes system calls to remote tockOS devices if the particular request cannot be met on this
 //! device
-use core::cell::Cell;
+//!
+//! Usage
+//! ------
+//! TODO PUT STUFF HERE
 use crate::driver;
 use kernel::common::cells::{TakeCell};
-use kernel::hil::spi;
+use kernel::hil::{spi, gpio};
 use kernel::{debug, ReturnCode};
 
 // The capsule takes in a driver number, system call number, and up to four 
@@ -11,27 +14,20 @@ use kernel::{debug, ReturnCode};
 // needs to be sent to a remote device. If it can be handled locally, then the 
 // normal system call proceeds and if not, then 
 
-/*#[derive(Default)]
-pub struct App {
-    callback: Option<Callback>,
-    subscribed: bool,
-}*/
-
-
 pub struct RemoteSystemCall<'a> {
   spi: &'a dyn spi::SpiMasterDevice,
   pass_buffer: TakeCell<'static, [u8]>,
   read_buffer: TakeCell<'static, [u8]>,
   data_buffer: TakeCell<'static, [u32]>,
   client: TakeCell<'static, bool>,
-  //apps: Grant<App>,
+  pin: &'a dyn gpio::InterruptPin<'a>,
 }
 
 impl<'a> spi::SpiMasterClient for RemoteSystemCall<'a> {
   fn read_write_done(
       &self,
       mut _write: &'static mut [u8],
-      mut _read: Option<&'static mut [u8]>,
+      mut read: Option<&'static mut [u8]>,
       _len: usize,
     ) {
       debug!("Client!");
@@ -41,7 +37,27 @@ impl<'a> spi::SpiMasterClient for RemoteSystemCall<'a> {
               *client = false;
           },
       );
+      let rbuf = read.take().unwrap();
+      debug!("Length read: {}", rbuf.len());
+      for i in 0..rbuf.len() {
+          debug!("{}", rbuf[i]);
+      }
+      self.read_buffer.replace(rbuf);
   }
+}
+
+impl<'a> gpio::Client for RemoteSystemCall<'a> {
+    fn fired(&self) {
+        debug!("Hey! The GPIO Pin fired!");
+        /*self.read_buffer.map_or_else(
+            || debug!("There is no read buffer!"),
+            |read_buffer| {
+                for i in 0..read_buffer.len() {
+                  debug!("{}", read_buffer[i]);
+              }
+            }
+        );*/
+    }
 }
 
 impl<'a> RemoteSystemCall<'a> {
@@ -52,7 +68,7 @@ impl<'a> RemoteSystemCall<'a> {
       data_buf: &'static mut [u32],
       client: &'static mut bool,
       spi: &'a dyn spi::SpiMasterDevice,
-      //apps: Grant<App>
+      syscall_pin: &'a dyn gpio::InterruptPin<'a>,
   ) -> RemoteSystemCall<'a> {
       RemoteSystemCall {
           spi: spi,
@@ -60,17 +76,25 @@ impl<'a> RemoteSystemCall<'a> {
           read_buffer: TakeCell::new(read_buf),
           data_buffer: TakeCell::new(data_buf),
           client: TakeCell::new(client),
-          //apps: grant,
+          pin: syscall_pin, 
       }
   }
 
-  // Configures SPI
+  // Configures different hardware associated with the capsule
   pub fn configure(&self) {
+      /*Configure SPI*/
       self.spi.configure(
           spi::ClockPolarity::IdleLow,
           spi::ClockPhase::SampleLeading,
           400_000
       );
+
+      /*Configure GPIO*/
+      self.pin.make_input();
+      self.pin.clear();
+      self.pin.set_floating_state(gpio::FloatingState::PullNone);
+      self.pin.enable_interrupts(gpio::InterruptEdge::RisingEdge);
+
   }
  
   // Determines whether or not to reroute system call to be remote
@@ -113,42 +137,41 @@ impl<'a> RemoteSystemCall<'a> {
       [b1, b2, b3, b4]
   }
   
-  // Subscribes to callbacks from SPI <-- WIP
-  /*pub fn subscribe(&self, callback: Option<Callback>) {
-      self.app.enter(|app| {
-          app.callback = callback;
-      }).unwrap_or_else(|err| err.into());
-  }*/
-  
   // Sends the data over SPI
   pub fn send_data(&self) -> ReturnCode {
-          self.data_buffer.take().map_or_else(
-              || panic!("There is no data buffer!"),
-              |data_buffer| {
-                  self.pass_buffer.map(|pass_buffer| {
-                    for i in 0..data_buffer.len() {
-                        let temp_arr = self.transform_u32_to_u8_array(data_buffer[i]);
-                        for j in 0..4 {
-                            pass_buffer[j + 4*i] = temp_arr[j]; 
-                        }
-                    }
-                  });
-              }
-          );
-          self.pass_buffer.take().map_or_else(
-              || panic!("There is no spi pass buffer!"),
-              |pass_buffer| {
-                  
-                  self.spi.read_write_bytes(pass_buffer, self.read_buffer.take(), pass_buffer.len());        
-                  self.client.map_or_else(
-                      || panic!("There is no spi pass buffer!"),
-                      |client| {
+      self.data_buffer.take().map_or_else(
+          || panic!("There is no data buffer!"),
+          |data_buffer| {
+              self.pass_buffer.map(|pass_buffer| {
+                  for i in 0..data_buffer.len() {
+                      let temp_arr = self.transform_u32_to_u8_array(data_buffer[i]);
+                      for j in 0..4 {
+                          pass_buffer[j + 4*i] = temp_arr[j]; 
+                      }
+                  }
+              });
+          }
+      );
+      self.pass_buffer.take().map_or_else(
+          || panic!("There is no spi pass buffer!"),
+          |pass_buffer| {
+              /*self.read_buffer.map(|read_buffer| {
+                  self.spi.read_write_bytes(pass_buffer, read_buffer, pass_buffer.len());
+                  self.client.map(|client| {
                           *client = true;
-                      },
-                      );
-              },
-          );
-          ReturnCode::SUCCESS
+                  });
+              });*/
+              let rbuf = self.read_buffer.take().unwrap();
+              self.spi.read_write_bytes(pass_buffer, Some(rbuf), pass_buffer.len());
+              self.client.map_or_else(
+                  || panic!("There is no spi pass buffer!"),
+                  |client| {
+                      *client = true;
+                  },
+              );
+          },
+      );
+      ReturnCode::SUCCESS
   }
 
   // Receives data (not yet in use)

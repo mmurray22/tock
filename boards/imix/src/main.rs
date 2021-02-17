@@ -64,11 +64,11 @@ mod test;
 mod power;
 
 // State for loading apps.
-const NUM_ARGS : usize = 20;
+const NUM_ARGS : usize = 5;
 const NUM_PROCS: usize = 4;
 static mut DATA : [u32; NUM_ARGS] = [0; NUM_ARGS];
 static mut BUF : [u8; NUM_ARGS*4] = [0; NUM_ARGS*4];
-static mut BUF_CLI : [u8; NUM_ARGS*4] = [0; NUM_ARGS*4];
+static mut BUF_CLI : [u8; NUM_ARGS*4 + 1] = [0; NUM_ARGS*4 + 1];
 static mut CLIENT : bool = false;
 // Constants related to the configuration of the 15.4 network stack
 // TODO: Notably, the radio MAC addresses can be configured from userland at the moment
@@ -205,6 +205,7 @@ impl kernel::Platform for Imix {
                                                     *arg1);
                 //self.remote_system_call.subscribe(remote_syscall_cb);
                 self.remote_system_call.send_data();
+                debug!("Almost done with remote system call!");
                 core::prelude::v1::Err(ReturnCode::FAIL)
             },
             _ => Ok(()),
@@ -280,7 +281,8 @@ unsafe fn set_pin_primary_functions() {
     PC[28].configure(None); //... D5          -- GPIO Pin
     PC[29].configure(None); //... D4          -- GPIO Pin
     PC[30].configure(None); //... D3          -- GPIO Pin
-    PC[31].configure(None); //... D2          -- GPIO Pin
+    /* ORIGINAL: PC[31].configure(None); //... D2          -- GPIO Pin */
+    PC[31].configure(None); //... D2          -- RSYSCALL
 }
 
 /// Reset Handler.
@@ -370,9 +372,16 @@ pub unsafe fn reset_handler() {
         .finalize(components::spi_mux_component_helper!(sam4l::spi::SpiHw));
     let remote_spi = SpiComponent::new(remote_mux_spi, 2)
         .finalize(components::spi_component_helper!(sam4l::spi::SpiHw));
+    let remote_pin = &sam4l::gpio::PC[31];
     let remote_system_call = static_init!(capsules::system_call_interface::RemoteSystemCall<'static>,
-                                          RemoteSystemCall::new(&mut BUF, &mut BUF_CLI, &mut DATA, &mut CLIENT, remote_spi));
+                                          RemoteSystemCall::new(&mut BUF, 
+                                                                &mut BUF_CLI,
+                                                                &mut DATA, 
+                                                                &mut CLIENT, 
+                                                                remote_spi,
+                                                                remote_pin));
     remote_spi.set_client(remote_system_call);
+    remote_pin.set_client(remote_system_call);
     remote_system_call.configure();
 
     let adc = AdcComponent::new(board_kernel).finalize(());
@@ -380,13 +389,13 @@ pub unsafe fn reset_handler() {
         board_kernel,
         components::gpio_component_helper!(
             sam4l::gpio::GPIOPin,
-            0 => &sam4l::gpio::PC[31],
-            1 => &sam4l::gpio::PC[30],
-            2 => &sam4l::gpio::PC[29],
-            3 => &sam4l::gpio::PC[28],
-            4 => &sam4l::gpio::PC[27],
-            5 => &sam4l::gpio::PC[26],
-            6 => &sam4l::gpio::PA[20]
+            //0 => &sam4l::gpio::PC[31],
+            0 => &sam4l::gpio::PC[30],
+            1 => &sam4l::gpio::PC[29],
+            2 => &sam4l::gpio::PC[28],
+            3 => &sam4l::gpio::PC[27],
+            4 => &sam4l::gpio::PC[26],
+            5 => &sam4l::gpio::PA[20]
         ),
     )
     .finalize(components::gpio_component_buf!(sam4l::gpio::GPIOPin));
