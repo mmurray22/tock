@@ -1,22 +1,77 @@
-//! Reroutes system calls to remote tockOS devices if the particular request cannot be met on this
-//! device
+//! Reroutes system calls to remote tockOS devices if the particular request 
+//! cannot be met on this device
+//!
+//! The capsule struct Remote SystemCall is comprised of a virtual spi 
+//! controller device, a write buffer, a read buffer, a data buffer (which takes
+//! in the raw argument data from the system call), a client boolean to indicate
+//! whether the read/write has finished, and a GPIO pin. It depends on the
+//! platform specific remote_syscall function to reroute the data via SPI to a
+//! peripheral device.
 //!
 //! Usage
 //! ------
-//! TODO PUT STUFF HERE
+//! Create of a remote_system_call object:
+//!
+//!    let remote_mux_spi = components::spi::SpiMuxComponent::new(&sam4l::spi::SPI)
+//!        .finalize(components::spi_mux_component_helper!(sam4l::spi::SpiHw));
+//!    let remote_spi = SpiComponent::new(remote_mux_spi, 2)
+//!        .finalize(components::spi_component_helper!(sam4l::spi::SpiHw));
+//!    let remote_pin = &sam4l::gpio::PC[31];
+//!    let remote_system_call = static_init!(capsules::system_call_interface::RemoteSystemCall<'static>,
+//!                                          RemoteSystemCall::new(&mut BUF,
+//!                                                                &mut BUF_CLI,
+//!                                                                &mut DATA,
+//!                                                                &mut CLIENT,
+//!                                                                remote_spi,
+//!                                                                remote_pin));
+//!    remote_spi.set_client(remote_system_call);
+//!    remote_pin.set_client(remote_system_call);
+//!    remote_system_call.configure();
+//!
+//!
+//! Create a logical path for a system call:
+//!
+//! Within the platform struct's remote_syscall function, there is a  match 
+//! statement. The match statement contains all currently supported system calls
+//! If we wanted to add a system call to support, we do the following (taking 
+//! command as an example):
+//!
+//! syscall::Syscall::COMMAND {
+//!             driver_number,
+//!             subdriver_number,
+//!             arg0,
+//!             arg1,
+//!         } => {
+//!             if self.remote_system_call.determine_route(*driver_number) == 0 {
+//!               return Ok(());
+//!             }
+//!             self.remote_system_call.fill_buffer(2,
+//!                                                 *driver_number,
+//!                                                 *subdriver_number,
+//!                                                 *arg0,
+//!                                                 *arg1);
+//!             self.remote_system_call.send_data();
+//!             core::prelude::v1::Err(ReturnCode::FAIL)
+//! },
+//!
+//! Note that we return an error once we have finished sending off the data.
+//! This is due to the way the remote_syscall function is called in the
+//! scheduler. If the remote_syscall function returns an error, that means that
+//! the system call was rerouted to be executed remotely and thus does not need
+//! a corresponding local execution as well. 
+//!
+//! NOTE: Once you add this system call support to the controller, you must also
+//! ensure the peripheral app in libtock-c has the appropriate support for the 
+//! system call as well.
+
 use crate::driver;
 use kernel::common::cells::{TakeCell};
 use kernel::hil::{spi, gpio};
 use kernel::{debug, ReturnCode};
 
-// The capsule takes in a driver number, system call number, and up to four 
-// arguments and determines whether the system call can be handled locally or
-// needs to be sent to a remote device. If it can be handled locally, then the 
-// normal system call proceeds and if not, then 
-
 pub struct RemoteSystemCall<'a> {
   spi: &'a dyn spi::SpiMasterDevice,
-  pass_buffer: TakeCell<'static, [u8]>,
+  pass_buffer: TakeCell<'static, [u8]>, //write_buffer
   read_buffer: TakeCell<'static, [u8]>,
   data_buffer: TakeCell<'static, [u32]>,
   client: TakeCell<'static, bool>,
@@ -24,6 +79,7 @@ pub struct RemoteSystemCall<'a> {
 }
 
 impl<'a> spi::SpiMasterClient for RemoteSystemCall<'a> {
+  //Executed once the SPI data transfer is complete
   fn read_write_done(
       &self,
       mut _write: &'static mut [u8],
@@ -47,16 +103,9 @@ impl<'a> spi::SpiMasterClient for RemoteSystemCall<'a> {
 }
 
 impl<'a> gpio::Client for RemoteSystemCall<'a> {
+    //Fires when toggled
     fn fired(&self) {
         debug!("Hey! The GPIO Pin fired!");
-        /*self.read_buffer.map_or_else(
-            || debug!("There is no read buffer!"),
-            |read_buffer| {
-                for i in 0..read_buffer.len() {
-                  debug!("{}", read_buffer[i]);
-              }
-            }
-        );*/
     }
 }
 
@@ -99,9 +148,10 @@ impl<'a> RemoteSystemCall<'a> {
  
   // Determines whether or not to reroute system call to be remote
   pub fn determine_route(&self, driver: usize) -> usize {
-    // TODO: Need to figure out true metric for determining route //
+    // TODO: Need to implement true metric for determining route //
     let mut route : usize = 0;
-    if driver == (driver::NUM::Led as usize) {
+    if driver == (driver::NUM::Led as usize) ||
+       driver == (driver::NUM::Rng as usize) {
         route = 1;
     }
     route
@@ -155,12 +205,6 @@ impl<'a> RemoteSystemCall<'a> {
       self.pass_buffer.take().map_or_else(
           || panic!("There is no spi pass buffer!"),
           |pass_buffer| {
-              /*self.read_buffer.map(|read_buffer| {
-                  self.spi.read_write_bytes(pass_buffer, read_buffer, pass_buffer.len());
-                  self.client.map(|client| {
-                          *client = true;
-                  });
-              });*/
               let rbuf = self.read_buffer.take().unwrap();
               self.spi.read_write_bytes(pass_buffer, Some(rbuf), pass_buffer.len());
               self.client.map_or_else(
@@ -172,17 +216,5 @@ impl<'a> RemoteSystemCall<'a> {
           },
       );
       ReturnCode::SUCCESS
-  }
-
-  // Receives data (not yet in use)
-  pub fn receive_data(&self) {
-      self.read_buffer.take().map_or_else(
-          || panic!("There is no read buffer!"),
-          |read_buffer| {
-              for i in 0..read_buffer.len() {
-                  debug!("{}", read_buffer[i]);
-              }
-          }
-      );
   }
 }
