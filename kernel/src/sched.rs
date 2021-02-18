@@ -577,7 +577,7 @@ impl Kernel {
         timeslice_us.map(|timeslice| scheduler_timer.start(timeslice));
 
         // Need to track why the process is no longer executing so that we can
-        // inform the scheduler.
+        // inform the schedulere
         let mut return_reason = StoppedExecutingReason::NoWorkLeft;
 
         // Since the timeslice counts both the process's execution time and the
@@ -642,6 +642,7 @@ impl Kernel {
                             // decide how to handle the error.
                             if syscall != Syscall::YIELD {
                                 if let Err(response) = platform.remote_syscall(&syscall) {
+                                    //process.set_yielded_state();
                                     process.set_syscall_return_value(response.into());
                                     continue;
                                 }

@@ -82,7 +82,7 @@ impl<'a> spi::SpiMasterClient for RemoteSystemCall<'a> {
   //Executed once the SPI data transfer is complete
   fn read_write_done(
       &self,
-      mut _write: &'static mut [u8],
+      mut write: &'static mut [u8],
       mut read: Option<&'static mut [u8]>,
       _len: usize,
     ) {
@@ -98,6 +98,7 @@ impl<'a> spi::SpiMasterClient for RemoteSystemCall<'a> {
       for i in 0..rbuf.len() {
           debug!("{}", rbuf[i]);
       }
+      self.pass_buffer.replace(write);
       self.read_buffer.replace(rbuf);
   }
 }
@@ -167,7 +168,7 @@ impl<'a> RemoteSystemCall<'a> {
       arg_two: usize, 
       arg_three: usize) {
     self.data_buffer.map_or_else(
-        || panic!("There is no spi pass buffer!"),
+        || panic!("There is no data buffer!"),
         |data_buffer| {
             data_buffer[0] = system_call_num as u32;
             data_buffer[1] = driver_num as u32;
@@ -189,7 +190,7 @@ impl<'a> RemoteSystemCall<'a> {
   
   // Sends the data over SPI
   pub fn send_data(&self) -> ReturnCode {
-      self.data_buffer.take().map_or_else(
+      self.data_buffer.map_or_else(
           || panic!("There is no data buffer!"),
           |data_buffer| {
               self.pass_buffer.map(|pass_buffer| {
