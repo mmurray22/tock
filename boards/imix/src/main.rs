@@ -205,7 +205,25 @@ impl kernel::Platform for Imix {
                                                     *arg1);
                 //self.remote_system_call.subscribe(remote_syscall_cb);
                 self.remote_system_call.send_data();
-                debug!("Almost done with remote system call!");
+                debug!("Almost done with command!");
+                core::prelude::v1::Err(ReturnCode::FAIL)
+            },
+            syscall::Syscall::ALLOW {
+                driver_number,
+                subdriver_number,
+                allow_address,
+                allow_size,
+            } => {
+                if self.remote_system_call.determine_route(*driver_number) == 0 {
+                    return Ok(());
+                }
+                self.remote_system_call.fill_buffer(2,
+                                                    *driver_number,
+                                                    *subdriver_number,
+                                                    *allow_address as usize,
+                                                    *allow_size);
+                self.remote_system_call.send_data();
+                debug!("Almost done with allow!");
                 core::prelude::v1::Err(ReturnCode::FAIL)
             },
             _ => Ok(()),
