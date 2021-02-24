@@ -296,6 +296,12 @@ pub trait ProcessType {
     /// running.
     fn set_yielded_state(&self);
 
+    /// Move this process from the running state to the waiting for remote system calls state.
+    ///
+    /// This will fail (i.e. not do anything) if the process was not previously
+    /// running.
+    fn set_waiting_state(&self);
+
     /// Move this process from running or yielded state into the stopped state.
     ///
     /// This will fail (i.e. not do anything) if the process was not either
@@ -630,6 +636,12 @@ pub enum State {
     /// processes yet. It can also happen if an process is terminated and all
     /// of its state is reset as if it has not been executed yet.
     Unstarted,
+
+    /// The process is waiting on a system call to finish executing after it
+    /// was sent to a remote tockOS board to be executed. Once the process 
+    /// has received the system call response, its state will be restored to
+    /// running.
+    WaitingOnRemote,
 }
 
 /// The reaction the kernel should take when an app encounters a fault.
@@ -928,6 +940,13 @@ impl<C: Chip> ProcessType for Process<'_, C> {
     fn set_yielded_state(&self) {
         if self.state.get() == State::Running {
             self.state.set(State::Yielded);
+            self.kernel.decrement_work();
+        }
+    }
+
+    fn set_waiting_state(&self) {
+        if self.state.get() == State::Running {
+            self.state.set(State::WaitingOnRemote);
             self.kernel.decrement_work();
         }
     }

@@ -166,6 +166,9 @@ pub enum StoppedExecutingReason {
     /// interrupt), or because the scheduler no longer wants to execute that
     /// process.
     KernelPreemption,
+
+    /// The process is waiting for a remote system call to finish executing
+    WaitingOnRemote
 }
 
 impl Kernel {
@@ -642,8 +645,8 @@ impl Kernel {
                             // decide how to handle the error.
                             if syscall != Syscall::YIELD {
                                 if let Err(response) = platform.remote_syscall(&syscall) {
-                                    //process.set_yielded_state();
                                     process.set_syscall_return_value(response.into());
+                                    process.set_waiting_state();
                                     continue;
                                 }
 
@@ -875,6 +878,16 @@ impl Kernel {
                 }
                 process::State::StoppedFaulted => {
                     return_reason = StoppedExecutingReason::StoppedFaulted;
+                    break;
+                }
+                process::State::WaitingOnRemote => {
+                    /*If buffer is readable, then change the state */
+                    if platform.remote_syscall_cb() == Ok(()) {
+                        process.set_syscall_return_value(/*extract_return_value(&syscall)*/1);
+                    } else {
+                        /*Else continue marking the state as WaitingOnRemote*/
+                        return_reason = StoppedExecutingReason::WaitingOnRemote;
+                    }
                     break;
                 }
             }

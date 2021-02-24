@@ -179,8 +179,10 @@ impl kernel::Platform for Imix {
     }
     fn remote_syscall_cb(
         &self,
-        ) -> Result<(), ReturnCode> {
-        Ok(())
+        /*syscall: &syscall::Syscall,
+        process: &dyn process::ProcessType,*/
+    ) -> Result<(), ReturnCode> {
+        return self.remote_system_call.check_read_buffer();
     }
 
     fn remote_syscall(
@@ -206,7 +208,7 @@ impl kernel::Platform for Imix {
                 //self.remote_system_call.subscribe(remote_syscall_cb);
                 self.remote_system_call.send_data();
                 debug!("Almost done with command!");
-                core::prelude::v1::Err(ReturnCode::FAIL)
+                core::prelude::v1::Err(ReturnCode::EBUSY)
             },
             syscall::Syscall::ALLOW {
                 driver_number,

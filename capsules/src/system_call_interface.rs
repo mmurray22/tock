@@ -82,7 +82,7 @@ impl<'a> spi::SpiMasterClient for RemoteSystemCall<'a> {
   //Executed once the SPI data transfer is complete
   fn read_write_done(
       &self,
-      mut write: &'static mut [u8],
+      write: &'static mut [u8],
       mut read: Option<&'static mut [u8]>,
       _len: usize,
     ) {
@@ -107,6 +107,13 @@ impl<'a> gpio::Client for RemoteSystemCall<'a> {
     //Fires when toggled
     fn fired(&self) {
         debug!("Hey! The GPIO Pin fired!");
+        self.pass_buffer.take().map_or_else(
+          || panic!("There is no read buffer!"),
+          |pass_buffer| {
+              let rbuf = self.read_buffer.take().unwrap();
+              self.spi.read_write_bytes(pass_buffer, Some(rbuf), pass_buffer.len());
+          },
+      );
     }
 }
 
@@ -179,6 +186,32 @@ impl<'a> RemoteSystemCall<'a> {
     );
   }
 
+  pub fn check_read_buffer(&self) -> Result<(), ReturnCode> {
+      let mut check : u8 = 0;
+      self.read_buffer.take().map_or_else(
+          || debug!("Read buffer not found!"),
+          |_read_buffer| {
+              check = 1;
+          }
+      );
+      if check == 1 {
+          return Ok(());
+      }
+      return core::prelude::v1::Err(ReturnCode::FAIL);
+  }
+
+  pub fn extract_return_value(&self) -> usize {
+      self.read_buffer.take().map_or_else(
+          || panic!("Read buffer disappeared!"),
+          |_read_buffer| {
+              //TODO: Currently just returning a static dummy value
+              //Not quite sure exactly what info to convey yet
+              return 1;
+          }
+      );
+      return 0;
+  }
+
   // Helper function to transform the u32 to a u8 array
   fn transform_u32_to_u8_array(&self, y: u32) -> [u8; 4]{
       let b1 = ((y >> 24) & 0xff) as u8;
@@ -209,7 +242,7 @@ impl<'a> RemoteSystemCall<'a> {
               let rbuf = self.read_buffer.take().unwrap();
               self.spi.read_write_bytes(pass_buffer, Some(rbuf), pass_buffer.len());
               self.client.map_or_else(
-                  || panic!("There is no spi pass buffer!"),
+                  || panic!("There is no client!"),
                   |client| {
                       *client = true;
                   },
