@@ -963,6 +963,7 @@ impl<C: Chip> ProcessType for Process<'_, C> {
         match self.state.get() {
             State::StoppedRunning => self.state.set(State::Running),
             State::StoppedYielded => self.state.set(State::Yielded),
+            State::WaitingOnRemote => self.state.set(State::Running),
             _ => {} // Do nothing
         }
     }

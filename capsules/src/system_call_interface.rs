@@ -107,13 +107,13 @@ impl<'a> gpio::Client for RemoteSystemCall<'a> {
     //Fires when toggled
     fn fired(&self) {
         debug!("Hey! The GPIO Pin fired!");
-        self.pass_buffer.take().map_or_else(
+        /*self.pass_buffer.take().map_or_else(
           || panic!("There is no read buffer!"),
           |pass_buffer| {
               let rbuf = self.read_buffer.take().unwrap();
               self.spi.read_write_bytes(pass_buffer, Some(rbuf), pass_buffer.len());
           },
-      );
+        );*/
     }
 }
 
@@ -195,6 +195,7 @@ impl<'a> RemoteSystemCall<'a> {
           }
       );
       if check == 1 {
+          debug!("Read buffer is full!");
           return Ok(());
       }
       return core::prelude::v1::Err(ReturnCode::FAIL);
@@ -206,6 +207,7 @@ impl<'a> RemoteSystemCall<'a> {
           |_read_buffer| {
               //TODO: Currently just returning a static dummy value
               //Not quite sure exactly what info to convey yet
+              debug!("Return Value has been conveyed to the app!");
               return 1;
           }
       );

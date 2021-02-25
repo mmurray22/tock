@@ -594,6 +594,7 @@ impl Kernel {
                 || scheduler_timer.get_remaining_us() <= MIN_QUANTA_THRESHOLD_US
             {
                 // Process ran out of time while the kernel was executing.
+                debug!("Process ran out of time!");
                 process.debug_timeslice_expired();
                 return_reason = StoppedExecutingReason::TimesliceExpired;
                 break;
@@ -601,6 +602,7 @@ impl Kernel {
 
             // Check if the scheduler wishes to continue running this process.
             if !scheduler.continue_process(process.appid(), chip) {
+                debug!("Process will not continue executing!");
                 return_reason = StoppedExecutingReason::KernelPreemption;
                 break;
             }
@@ -644,7 +646,9 @@ impl Kernel {
                             // exhausted its timeslice) allowing the process to
                             // decide how to handle the error.
                             if syscall != Syscall::YIELD {
+                                debug!("Syscalls upcoming!");
                                 if let Err(response) = platform.remote_syscall(&syscall) {
+                                    debug!("System call is now remote");
                                     process.set_syscall_return_value(response.into());
                                     process.set_waiting_state();
                                     continue;
@@ -881,14 +885,15 @@ impl Kernel {
                     break;
                 }
                 process::State::WaitingOnRemote => {
-                    /*If buffer is readable, then change the state */
+                    debug!("Waiting On Remote!");
+                    /* If buffer is readable, then change the state */
                     if platform.remote_syscall_cb() == Ok(()) {
                         process.set_syscall_return_value(/*extract_return_value(&syscall)*/1);
-                    } else {
-                        /*Else continue marking the state as WaitingOnRemote*/
-                        return_reason = StoppedExecutingReason::WaitingOnRemote;
+                        process.resume();
                     }
-                    break;
+                    /* Else continue marking the state as WaitingOnRemote */
+                    //return_reason = StoppedExecutingReason::WaitingOnRemote;
+                    continue;
                 }
             }
         }
