@@ -222,7 +222,10 @@ impl<'a> RemoteSystemCall<'a> {
       let b4 = (y & 0xff) as u8;
       [b1, b2, b3, b4]
   }
-  
+
+  // Helper Hash function which verifies the kernel's 
+  // identity to the peripheral app
+
   // Sends the data over SPI
   pub fn send_data(&self) -> ReturnCode {
       self.data_buffer.map_or_else(
