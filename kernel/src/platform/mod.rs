@@ -63,7 +63,8 @@ pub trait Platform {
 
     fn remote_syscall(
         &self,
-        _syscall: &syscall::Syscall
+        _process: &dyn process::ProcessType,
+        _syscall: &syscall::Syscall,
     ) -> Result<(), returncode::ReturnCode> {
         Ok(())
     }

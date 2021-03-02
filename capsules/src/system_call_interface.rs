@@ -65,20 +65,28 @@
 //! system call as well.
 
 use crate::driver;
+use kernel::capabilities::ProcessManagementCapability;
 use kernel::common::cells::{TakeCell};
 use kernel::hil::{spi, gpio};
-use kernel::{debug, ReturnCode};
+use kernel::{AppId, debug, ReturnCode};
+use kernel::Kernel;
 
-pub struct RemoteSystemCall<'a> {
+const NUM_PROCS: usize = 4;
+
+pub struct RemoteSystemCall<'a, C: ProcessManagementCapability> {
   spi: &'a dyn spi::SpiMasterDevice,
   pass_buffer: TakeCell<'static, [u8]>, //write_buffer
   read_buffer: TakeCell<'static, [u8]>,
   data_buffer: TakeCell<'static, [u32]>,
   client: TakeCell<'static, bool>,
   pin: &'a dyn gpio::InterruptPin<'a>,
+  kernel:  &'static Kernel,
+  capability: C,
+  //apps: TakeCell<'static, []>,
+  //process: [Option<&'static dyn kernel::procs::ProcessType>;1],
 }
 
-impl<'a> spi::SpiMasterClient for RemoteSystemCall<'a> {
+impl<'a, C: ProcessManagementCapability> spi::SpiMasterClient for RemoteSystemCall<'a, C> {
   //Executed once the SPI data transfer is complete
   fn read_write_done(
       &self,
@@ -103,10 +111,12 @@ impl<'a> spi::SpiMasterClient for RemoteSystemCall<'a> {
   }
 }
 
-impl<'a> gpio::Client for RemoteSystemCall<'a> {
+impl<'a, C: ProcessManagementCapability> gpio::Client for RemoteSystemCall<'a, C> {
     //Fires when toggled
     fn fired(&self) {
         debug!("Hey! The GPIO Pin fired!");
+        self.set_processes_to_run();
+        /*TODO: Alert the process to start up again*/
         /*self.pass_buffer.take().map_or_else(
           || panic!("There is no read buffer!"),
           |pass_buffer| {
@@ -117,7 +127,7 @@ impl<'a> gpio::Client for RemoteSystemCall<'a> {
     }
 }
 
-impl<'a> RemoteSystemCall<'a> {
+impl<'a, C: ProcessManagementCapability> RemoteSystemCall<'a, C> {
   // Initializes RemoteSystemCall struct
   pub fn new(
       pass_buf: &'static mut [u8],
@@ -126,14 +136,19 @@ impl<'a> RemoteSystemCall<'a> {
       client: &'static mut bool,
       spi: &'a dyn spi::SpiMasterDevice,
       syscall_pin: &'a dyn gpio::InterruptPin<'a>,
-  ) -> RemoteSystemCall<'a> {
+      kernel: &'static Kernel,
+      capability: C,
+  ) -> RemoteSystemCall<'a, C> {
       RemoteSystemCall {
           spi: spi,
           pass_buffer: TakeCell::new(pass_buf),
           read_buffer: TakeCell::new(read_buf),
           data_buffer: TakeCell::new(data_buf),
           client: TakeCell::new(client),
-          pin: syscall_pin, 
+          pin: syscall_pin,
+          kernel: kernel,
+          capability: capability,
+          //process: [None; 1],
       }
   }
 
@@ -151,7 +166,6 @@ impl<'a> RemoteSystemCall<'a> {
       self.pin.clear();
       self.pin.set_floating_state(gpio::FloatingState::PullNone);
       self.pin.enable_interrupts(gpio::InterruptEdge::RisingEdge);
-
   }
  
   // Determines whether or not to reroute system call to be remote
@@ -223,24 +237,50 @@ impl<'a> RemoteSystemCall<'a> {
       [b1, b2, b3, b4]
   }
 
-  // Helper Hash function which verifies the kernel's 
-  // identity to the peripheral app
-
-  // Sends the data over SPI
-  pub fn send_data(&self) -> ReturnCode {
+  // Helper function to transform the u8 array to u32
+  fn transform_u8_array_to_u32(&self, _b: [u8; 4]) -> u8 {
+      let y : u8 = 0;
+      /*CONVERT THE ARRAY*/
+      y
+  }
+ 
+  // Helper function to fill pass buffer from data buffer
+  // Also creates checksum for the data
+  // All the information transferred by pass_buffer include:
+  // syscall_num, driver_num, arg0, arg1, arg2, arg3, checksum 
+  fn fill_pass_buffer(&self) {
       self.data_buffer.map_or_else(
           || panic!("There is no data buffer!"),
           |data_buffer| {
               self.pass_buffer.map(|pass_buffer| {
                   for i in 0..data_buffer.len() {
                       let temp_arr = self.transform_u32_to_u8_array(data_buffer[i]);
-                      for j in 0..4 {
+                      for j in 0..NUM_PROCS {
                           pass_buffer[j + 4*i] = temp_arr[j]; 
                       }
                   }
               });
           }
       );
+  }
+
+  // Helper function to make the checksum
+  // Currently checksum is simple measure
+  fn add_checksum(&self) {
+      self.pass_buffer.map_or_else(
+          || panic!("There is no pass buffer!"),
+          |pass_buffer| {
+              let mut checksum : u8 = 1;
+              for i in 0..pass_buffer.len() {
+                  checksum ^= pass_buffer[i];
+              }
+              pass_buffer[pass_buffer.len() - 1] = checksum;
+          }
+      );
+  }
+
+  // Helper function: Sends the data over SPI
+  fn send_over_spi(&self) {
       self.pass_buffer.take().map_or_else(
           || panic!("There is no spi pass buffer!"),
           |pass_buffer| {
@@ -254,6 +294,31 @@ impl<'a> RemoteSystemCall<'a> {
               );
           },
       );
+  }
+
+  // Send data over some communicatio medium
+  // from the controller to the peripheral app
+  pub fn send_data(&self) -> ReturnCode {
+      self.fill_pass_buffer();
+      self.add_checksum();
+      self.send_over_spi();
       ReturnCode::SUCCESS
+  }
+
+  pub fn enqueue_process(&mut self, _app_id: AppId) {
+   //   self.apps[0] = app_id;
+  }
+
+  pub fn set_processes_to_run(&self) {
+      self.kernel.process_each_capability(
+          &self.capability,
+          |proc| {
+              let proc_state = proc.get_state();
+              if proc_state == kernel::procs::State::WaitingOnRemote {
+                  proc.resume();
+                  debug!("Process resumed!");
+              }
+          },
+      );
   }
 }

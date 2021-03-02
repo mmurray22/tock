@@ -483,6 +483,7 @@ impl Kernel {
                         // No kernel work ready, so ask scheduler for a process.
                         match scheduler.next(self) {
                             SchedulingDecision::RunProcess((appid, timeslice_us)) => {
+                                debug!("Execute blink!");
                                 self.process_map_or((), appid, |process| {
                                     let (reason, time_executed) = self.do_process(
                                         platform,
@@ -548,7 +549,7 @@ impl Kernel {
     /// passed timeslice is smaller than `MIN_QUANTA_THRESHOLD_US` the process
     /// will not execute, and this function will return immediately.
     ///
-    /// This function returns a tuple indicating the reason the reason this
+    /// This function returns a tuple indicating the reason this
     /// function has returned to the scheduler, and the amount of time the
     /// process spent executing (or `None` if the process was run
     /// cooperatively). Notably, time spent in this function by the kernel,
@@ -590,6 +591,7 @@ impl Kernel {
         // no longer wants to execute this process or if it exceeds its
         // timeslice.
         loop {
+            debug!("START LOOP");
             if scheduler_timer.has_expired()
                 || scheduler_timer.get_remaining_us() <= MIN_QUANTA_THRESHOLD_US
             {
@@ -647,9 +649,9 @@ impl Kernel {
                             // decide how to handle the error.
                             if syscall != Syscall::YIELD {
                                 debug!("Syscalls upcoming!");
-                                if let Err(response) = platform.remote_syscall(&syscall) {
+                                if let Err(response) = platform.remote_syscall(process, &syscall) {
                                     debug!("System call is now remote");
-                                    process.set_syscall_return_value(response.into());
+                                    //process.set_syscall_return_value(response.into());
                                     process.set_waiting_state();
                                     continue;
                                 }
@@ -887,12 +889,12 @@ impl Kernel {
                 process::State::WaitingOnRemote => {
                     debug!("Waiting On Remote!");
                     /* If buffer is readable, then change the state */
-                    if platform.remote_syscall_cb() == Ok(()) {
+                    /*if platform.remote_syscall_cb() == Ok(()) {
                         process.set_syscall_return_value(/*extract_return_value(&syscall)*/1);
                         process.resume();
-                    }
+                    }*/
                     /* Else continue marking the state as WaitingOnRemote */
-                    //return_reason = StoppedExecutingReason::WaitingOnRemote;
+                    return_reason = StoppedExecutingReason::Stopped;
                     continue;
                 }
             }

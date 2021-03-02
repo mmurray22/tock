@@ -67,7 +67,7 @@ mod power;
 const NUM_ARGS : usize = 5;
 const NUM_PROCS: usize = 4;
 static mut DATA : [u32; NUM_ARGS] = [0; NUM_ARGS];
-static mut BUF : [u8; NUM_ARGS*4] = [0; NUM_ARGS*4];
+static mut BUF : [u8; NUM_ARGS*4 + 1] = [0; NUM_ARGS*4 + 1];
 static mut BUF_CLI : [u8; NUM_ARGS*4 + 1] = [0; NUM_ARGS*4 + 1];
 static mut CLIENT : bool = false;
 // Constants related to the configuration of the 15.4 network stack
@@ -131,7 +131,7 @@ struct Imix {
     >,
     nrf51822: &'static capsules::nrf51822_serialization::Nrf51822Serialization<'static>,
     nonvolatile_storage: &'static capsules::nonvolatile_storage_driver::NonvolatileStorage<'static>,
-    remote_system_call: &'static capsules::system_call_interface::RemoteSystemCall<'static>,
+    remote_system_call: &'static capsules::system_call_interface::RemoteSystemCall<'static, Capability>,
 }
 
 // The RF233 radio stack requires our buffers for its SPI operations:
@@ -147,6 +147,8 @@ struct Imix {
 static mut RF233_REG_WRITE: [u8; 2] = [0x00; 2];
 static mut RF233_REG_READ: [u8; 2] = [0x00; 2];
 */
+struct Capability;
+unsafe impl capabilities::ProcessManagementCapability for Capability {}
 
 impl kernel::Platform for Imix {
     fn with_driver<F, R>(&self, driver_num: usize, f: F) -> R
@@ -187,9 +189,11 @@ impl kernel::Platform for Imix {
 
     fn remote_syscall(
         &self,
+        process: &dyn kernel::procs::ProcessType,
         syscall: &syscall::Syscall
     ) -> Result<(), ReturnCode> {
         /*Note: Only supports LED Capsule and command syscall*/
+        debug!("In the remote syscall function!!");
         match syscall {
             syscall::Syscall::COMMAND {
                 driver_number,
@@ -207,8 +211,9 @@ impl kernel::Platform for Imix {
                                                     *arg1);
                 //self.remote_system_call.subscribe(remote_syscall_cb);
                 self.remote_system_call.send_data();
+                //self.remote_system_call.enqueue_process(core::prelude::v1::Some(process.clone())); //TODO: ADD PROCESS TO STRUCT
                 debug!("Almost done with command!");
-                core::prelude::v1::Err(ReturnCode::EBUSY)
+                core::prelude::v1::Err(ReturnCode::FAIL)
             },
             syscall::Syscall::ALLOW {
                 driver_number,
@@ -219,7 +224,7 @@ impl kernel::Platform for Imix {
                 if self.remote_system_call.determine_route(*driver_number) == 0 {
                     return Ok(());
                 }
-                self.remote_system_call.fill_buffer(2,
+                self.remote_system_call.fill_buffer(3,
                                                     *driver_number,
                                                     *subdriver_number,
                                                     *allow_address as usize,
@@ -393,13 +398,15 @@ pub unsafe fn reset_handler() {
     let remote_spi = SpiComponent::new(remote_mux_spi, 2)
         .finalize(components::spi_component_helper!(sam4l::spi::SpiHw));
     let remote_pin = &sam4l::gpio::PC[31];
-    let remote_system_call = static_init!(capsules::system_call_interface::RemoteSystemCall<'static>,
+    let remote_system_call = static_init!(capsules::system_call_interface::RemoteSystemCall<'static, Capability>,
                                           RemoteSystemCall::new(&mut BUF, 
                                                                 &mut BUF_CLI,
                                                                 &mut DATA, 
                                                                 &mut CLIENT, 
                                                                 remote_spi,
-                                                                remote_pin));
+                                                                remote_pin,
+                                                                board_kernel,
+                                                                Capability));
     remote_spi.set_client(remote_system_call);
     remote_pin.set_client(remote_system_call);
     remote_system_call.configure();

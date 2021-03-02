@@ -310,8 +310,8 @@ pub trait ProcessType {
 
     /// Move this stopped process back into its original state.
     ///
-    /// This transitions a process from `StoppedRunning` -> `Running` or
-    /// `StoppedYielded` -> `Yielded`.
+    /// This transitions a process from `StoppedRunning` -> `Running`,
+    /// `StoppedYielded` -> `Yielded`, or `WaitingOnRemote` -> `Running`.
     fn resume(&self);
 
     /// Put this process in the fault state. This will trigger the
