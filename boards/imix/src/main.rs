@@ -209,9 +209,8 @@ impl kernel::Platform for Imix {
                                                     *subdriver_number,
                                                     *arg0,
                                                     *arg1);
-                //self.remote_system_call.subscribe(remote_syscall_cb);
                 self.remote_system_call.send_data();
-                //self.remote_system_call.enqueue_process(core::prelude::v1::Some(process.clone())); //TODO: ADD PROCESS TO STRUCT
+                //self.remote_system_call.enqueue_process();
                 debug!("Almost done with command!");
                 core::prelude::v1::Err(ReturnCode::FAIL)
             },

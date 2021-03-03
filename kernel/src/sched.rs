@@ -650,9 +650,8 @@ impl Kernel {
                             // decide how to handle the error.
                             if syscall != Syscall::YIELD {
                                 debug!("Syscalls upcoming!");
-                                if let Err(response) = platform.remote_syscall(process, &syscall) {
+                                if let Err(_response) = platform.remote_syscall(process, &syscall) {
                                     debug!("System call is now remote");
-                                    //process.set_syscall_return_value(response.into());
                                     process.set_waiting_state();
                                     continue;
                                 }
@@ -900,7 +899,7 @@ impl Kernel {
                 }
                 process::State::ReturnRemoteValue => {
                     debug!("Return Remote Value!");
-                    process.set_syscall_return_value(1);
+                    //process.set_syscall_return_value(1);
                     process.resume();
                     continue;
                 }

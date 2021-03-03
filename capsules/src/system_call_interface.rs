@@ -9,6 +9,7 @@
 //! peripheral device.
 //!
 //! Usage
+//! TODO OUT OF DATE
 //! ------
 //! Create of a remote_system_call object:
 //!
@@ -82,8 +83,7 @@ pub struct RemoteSystemCall<'a, C: ProcessManagementCapability> {
   pin: &'a dyn gpio::InterruptPin<'a>,
   kernel:  &'static Kernel,
   capability: C,
-  //apps: TakeCell<'static, []>,
-  //process: [Option<&'static dyn kernel::procs::ProcessType>;1],
+  //proc_name: &'static mut str,
 }
 
 impl<'a, C: ProcessManagementCapability> spi::SpiMasterClient for RemoteSystemCall<'a, C> {
@@ -140,7 +140,7 @@ impl<'a, C: ProcessManagementCapability> RemoteSystemCall<'a, C> {
           pin: syscall_pin,
           kernel: kernel,
           capability: capability,
-          //process: [None; 1],
+          //proc_name: mut "Placeholder",
       }
   }
 
@@ -188,6 +188,9 @@ impl<'a, C: ProcessManagementCapability> RemoteSystemCall<'a, C> {
             data_buffer[2] = arg_one as u32;
             data_buffer[3] = arg_two as u32;
             data_buffer[4] = arg_three as u32;
+            for i in 0..4 {
+                debug!("Data_buffer: {}", data_buffer[i]);
+            }
         },
     );
   }
@@ -249,6 +252,7 @@ impl<'a, C: ProcessManagementCapability> RemoteSystemCall<'a, C> {
                       let temp_arr = self.transform_u32_to_u8_array(data_buffer[i]);
                       for j in 0..NUM_PROCS {
                           pass_buffer[j + 4*i] = temp_arr[j]; 
+                          debug!("Fill pass buffer: {}", pass_buffer[j + 4*i]);
                       }
                   }
               });
@@ -306,8 +310,9 @@ impl<'a, C: ProcessManagementCapability> RemoteSystemCall<'a, C> {
           &self.capability,
           |proc| {
               let proc_state = proc.get_state();
-              if proc_state == kernel::procs::State::WaitingOnRemote {
-                  proc.set_returning_state();
+              if proc_state == kernel::procs::State::WaitingOnRemote 
+              /*&& proc.name == name */{
+                  proc.resume();
                   debug!("Process resumed!");
               }
           },
