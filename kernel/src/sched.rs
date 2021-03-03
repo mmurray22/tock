@@ -466,6 +466,7 @@ impl Kernel {
         _capability: &dyn capabilities::MainLoopCapability,
     ) -> ! {
         chip.watchdog().setup();
+        let mut ctr : usize = 0;
         loop {
             chip.watchdog().tickle();
             unsafe {
@@ -474,6 +475,10 @@ impl Kernel {
                 // processes instead, or there may be no kernel work to do.
                 match scheduler.do_kernel_work_now(chip) {
                     true => {
+                        if ctr > 1000 {
+                            debug!("CTR : {}", ctr);
+                        }
+                        ctr+=1;
                         // Execute kernel work. This includes handling
                         // interrupts and is how code in the chips/ and capsules
                         // crates is able to execute.
@@ -483,7 +488,6 @@ impl Kernel {
                         // No kernel work ready, so ask scheduler for a process.
                         match scheduler.next(self) {
                             SchedulingDecision::RunProcess((appid, timeslice_us)) => {
-                                debug!("Execute blink!");
                                 self.process_map_or((), appid, |process| {
                                     let (reason, time_executed) = self.do_process(
                                         platform,
@@ -591,12 +595,10 @@ impl Kernel {
         // no longer wants to execute this process or if it exceeds its
         // timeslice.
         loop {
-            debug!("START LOOP");
             if scheduler_timer.has_expired()
                 || scheduler_timer.get_remaining_us() <= MIN_QUANTA_THRESHOLD_US
             {
                 // Process ran out of time while the kernel was executing.
-                debug!("Process ran out of time!");
                 process.debug_timeslice_expired();
                 return_reason = StoppedExecutingReason::TimesliceExpired;
                 break;
@@ -604,7 +606,6 @@ impl Kernel {
 
             // Check if the scheduler wishes to continue running this process.
             if !scheduler.continue_process(process.appid(), chip) {
-                debug!("Process will not continue executing!");
                 return_reason = StoppedExecutingReason::KernelPreemption;
                 break;
             }
@@ -895,6 +896,12 @@ impl Kernel {
                     }*/
                     /* Else continue marking the state as WaitingOnRemote */
                     return_reason = StoppedExecutingReason::Stopped;
+                    continue;
+                }
+                process::State::ReturnRemoteValue => {
+                    debug!("Return Remote Value!");
+                    process.set_syscall_return_value(1);
+                    process.resume();
                     continue;
                 }
             }

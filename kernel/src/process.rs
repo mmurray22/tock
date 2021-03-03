@@ -302,6 +302,9 @@ pub trait ProcessType {
     /// running.
     fn set_waiting_state(&self);
 
+    /// Move this process from the waiting state to the returning state
+    fn set_returning_state(&self);
+
     /// Move this process from running or yielded state into the stopped state.
     ///
     /// This will fail (i.e. not do anything) if the process was not either
@@ -642,6 +645,11 @@ pub enum State {
     /// has received the system call response, its state will be restored to
     /// running.
     WaitingOnRemote,
+
+    /// The process has now received the remote system call results and before
+    /// resuming the process, we need to return the response sent from the
+    /// peripheral
+    ReturnRemoteValue,
 }
 
 /// The reaction the kernel should take when an app encounters a fault.
@@ -951,6 +959,13 @@ impl<C: Chip> ProcessType for Process<'_, C> {
         }
     }
 
+    fn set_returning_state(&self) {
+        if self.state.get() == State::WaitingOnRemote {
+            self.state.set(State::ReturnRemoteValue);
+            self.kernel.increment_work();
+        }
+    }
+
     fn stop(&self) {
         match self.state.get() {
             State::Running => self.state.set(State::StoppedRunning),
@@ -961,9 +976,22 @@ impl<C: Chip> ProcessType for Process<'_, C> {
 
     fn resume(&self) {
         match self.state.get() {
-            State::StoppedRunning => self.state.set(State::Running),
-            State::StoppedYielded => self.state.set(State::Yielded),
-            State::WaitingOnRemote => self.state.set(State::Running),
+            State::StoppedRunning => {
+                self.kernel.increment_work();
+                self.state.set(State::Running);
+            },
+            State::StoppedYielded => {
+                self.kernel.increment_work();
+                self.state.set(State::Yielded);
+            },
+            State::WaitingOnRemote => {
+                self.kernel.increment_work();
+                self.state.set(State::Running);
+            }, 
+            State::ReturnRemoteValue => {
+                self.kernel.increment_work();
+                self.state.set(State::Running);
+            },
             _ => {} // Do nothing
         }
     }

@@ -116,14 +116,6 @@ impl<'a, C: ProcessManagementCapability> gpio::Client for RemoteSystemCall<'a, C
     fn fired(&self) {
         debug!("Hey! The GPIO Pin fired!");
         self.set_processes_to_run();
-        /*TODO: Alert the process to start up again*/
-        /*self.pass_buffer.take().map_or_else(
-          || panic!("There is no read buffer!"),
-          |pass_buffer| {
-              let rbuf = self.read_buffer.take().unwrap();
-              self.spi.read_write_bytes(pass_buffer, Some(rbuf), pass_buffer.len());
-          },
-        );*/
     }
 }
 
@@ -315,7 +307,7 @@ impl<'a, C: ProcessManagementCapability> RemoteSystemCall<'a, C> {
           |proc| {
               let proc_state = proc.get_state();
               if proc_state == kernel::procs::State::WaitingOnRemote {
-                  proc.resume();
+                  proc.set_returning_state();
                   debug!("Process resumed!");
               }
           },
