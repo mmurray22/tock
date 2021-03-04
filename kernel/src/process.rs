@@ -981,17 +981,17 @@ impl<C: Chip> ProcessType for Process<'_, C> {
                 self.state.set(State::Running);
             },
             State::StoppedYielded => {
-                self.kernel.increment_work();
+                //self.kernel.increment_work();
                 self.state.set(State::Yielded);
+            },
+            State::ReturnRemoteValue => {
+                //self.kernel.increment_work();
+                self.state.set(State::Running);
             },
             State::WaitingOnRemote => {
                 self.kernel.increment_work();
                 self.state.set(State::Running);
             }, 
-            State::ReturnRemoteValue => {
-                self.kernel.increment_work();
-                self.state.set(State::Running);
-            },
             _ => {} // Do nothing
         }
     }

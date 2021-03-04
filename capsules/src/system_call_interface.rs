@@ -66,6 +66,7 @@
 //! system call as well.
 
 use crate::driver;
+use core::convert::TryInto;
 use kernel::capabilities::ProcessManagementCapability;
 use kernel::common::cells::{TakeCell};
 use kernel::hil::{spi, gpio};
@@ -83,7 +84,7 @@ pub struct RemoteSystemCall<'a, C: ProcessManagementCapability> {
   pin: &'a dyn gpio::InterruptPin<'a>,
   kernel:  &'static Kernel,
   capability: C,
-  //proc_name: &'static mut str,
+  ////proc_name: &'static mut str,
 }
 
 impl<'a, C: ProcessManagementCapability> spi::SpiMasterClient for RemoteSystemCall<'a, C> {
@@ -94,18 +95,14 @@ impl<'a, C: ProcessManagementCapability> spi::SpiMasterClient for RemoteSystemCa
       mut read: Option<&'static mut [u8]>,
       _len: usize,
     ) {
-      debug!("Client!");
+      debug!("Client replied!");
       self.client.map_or_else(
-          || panic!("There is no spi pass buffer!"),
+          || panic!("There is no client bool!"),
           |client| {
-              *client = false;
+              *client = !*client;
           },
       );
       let rbuf = read.take().unwrap();
-      debug!("Length read: {}", rbuf.len());
-      for i in 0..rbuf.len() {
-          debug!("{}", rbuf[i]);
-      }
       self.pass_buffer.replace(write);
       self.read_buffer.replace(rbuf);
   }
@@ -115,7 +112,25 @@ impl<'a, C: ProcessManagementCapability> gpio::Client for RemoteSystemCall<'a, C
     //Fires when toggled
     fn fired(&self) {
         debug!("Hey! The GPIO Pin fired!");
-        self.set_processes_to_run();
+        self.read_buffer.map_or_else(
+            ||panic!("Wrong Client"),
+            |rbuf| {
+                for i in 0..rbuf.len() {
+                    debug!("{}", rbuf[i]);
+                }
+            }
+        );
+        self.client.map_or_else(
+            ||panic!("There is no client bool!"),
+            |client| {
+                if *client {
+                    self.send_data();
+                } else {
+                    self.set_processes_to_run();
+                }
+            }
+        );
+        //self.set_processes_to_run();
     }
 }
 
@@ -130,6 +145,7 @@ impl<'a, C: ProcessManagementCapability> RemoteSystemCall<'a, C> {
       syscall_pin: &'a dyn gpio::InterruptPin<'a>,
       kernel: &'static Kernel,
       capability: C,
+      //proc_name: &'static mut str,
   ) -> RemoteSystemCall<'a, C> {
       RemoteSystemCall {
           spi: spi,
@@ -140,7 +156,7 @@ impl<'a, C: ProcessManagementCapability> RemoteSystemCall<'a, C> {
           pin: syscall_pin,
           kernel: kernel,
           capability: capability,
-          //proc_name: mut "Placeholder",
+          //proc_name: proc_name,
       }
   }
 
@@ -193,6 +209,7 @@ impl<'a, C: ProcessManagementCapability> RemoteSystemCall<'a, C> {
             }
         },
     );
+    self.fill_pass_buffer();
   }
 
   pub fn check_read_buffer(&self) -> Result<(), ReturnCode> {
@@ -223,6 +240,19 @@ impl<'a, C: ProcessManagementCapability> RemoteSystemCall<'a, C> {
       return 0;
   }
 
+  pub fn get_client(&self) -> bool {
+      self.client.map_or_else(
+          ||panic!("No client!"),
+          |client| {
+              if *client {
+                return true;
+              }
+              return false;
+          }
+      );
+      return false;
+  }
+
   // Helper function to transform the u32 to a u8 array
   fn transform_u32_to_u8_array(&self, y: u32) -> [u8; 4]{
       let b1 = ((y >> 24) & 0xff) as u8;
@@ -232,13 +262,6 @@ impl<'a, C: ProcessManagementCapability> RemoteSystemCall<'a, C> {
       [b1, b2, b3, b4]
   }
 
-  // Helper function to transform the u8 array to u32
-  fn transform_u8_array_to_u32(&self, _b: [u8; 4]) -> u8 {
-      let y : u8 = 0;
-      /*CONVERT THE ARRAY*/
-      y
-  }
- 
   // Helper function to fill pass buffer from data buffer
   // Also creates checksum for the data
   // All the information transferred by pass_buffer include:
@@ -252,7 +275,6 @@ impl<'a, C: ProcessManagementCapability> RemoteSystemCall<'a, C> {
                       let temp_arr = self.transform_u32_to_u8_array(data_buffer[i]);
                       for j in 0..NUM_PROCS {
                           pass_buffer[j + 4*i] = temp_arr[j]; 
-                          debug!("Fill pass buffer: {}", pass_buffer[j + 4*i]);
                       }
                   }
               });
@@ -282,12 +304,6 @@ impl<'a, C: ProcessManagementCapability> RemoteSystemCall<'a, C> {
           |pass_buffer| {
               let rbuf = self.read_buffer.take().unwrap();
               self.spi.read_write_bytes(pass_buffer, Some(rbuf), pass_buffer.len());
-              self.client.map_or_else(
-                  || panic!("There is no client!"),
-                  |client| {
-                      *client = true;
-                  },
-              );
           },
       );
   }
@@ -295,10 +311,34 @@ impl<'a, C: ProcessManagementCapability> RemoteSystemCall<'a, C> {
   // Send data over some communicatio medium
   // from the controller to the peripheral app
   pub fn send_data(&self) -> ReturnCode {
-      self.fill_pass_buffer();
       self.add_checksum();
       self.send_over_spi();
       ReturnCode::SUCCESS
+  }
+  
+  // Helper function to transform the u8 array to u32
+  fn transform_u8_array_to_u32(&self, b: [u8; 4]) -> u32 {
+      let y : u32 = ( ( (b[0] as u32) & 0xFF ) << 24 ) |
+                  ( ( (b[1] as u32) & 0xFF ) << 16 ) |
+                  ( ( (b[2] as u32) & 0xFF ) << 8 ) |
+                  ( ( (b[3] as u32) & 0xFF ) << 0 ) ;
+      debug!("y: {}", y);
+      y
+  }
+
+  fn get_syscall_return_value(&self) -> u32 {
+      let mut return_value : u32 = 0;
+      self.read_buffer.map_or_else(
+          ||panic!("Read buffer disappeared!"),
+          |read_buffer| {
+              let mut temp : [u8; 4] = [0; 4];
+              for i in 0..4 {
+                  temp[i] = read_buffer[i];
+              }
+              return_value = self.transform_u8_array_to_u32(temp);
+          }
+      );
+      return return_value; /*TODO MAKE THIS AN ERROR*/
   }
 
   pub fn enqueue_process(&mut self, _app_id: AppId) {
@@ -306,14 +346,18 @@ impl<'a, C: ProcessManagementCapability> RemoteSystemCall<'a, C> {
   }
 
   pub fn set_processes_to_run(&self) {
+      let return_value : u32 = self.get_syscall_return_value();
       self.kernel.process_each_capability(
           &self.capability,
           |proc| {
               let proc_state = proc.get_state();
               if proc_state == kernel::procs::State::WaitingOnRemote 
               /*&& proc.name == name */{
+                  debug!("return value: {}", return_value);
+                  unsafe {
+                    proc.set_syscall_return_value(return_value.try_into().unwrap());
+                  }
                   proc.resume();
-                  debug!("Process resumed!");
               }
           },
       );

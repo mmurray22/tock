@@ -166,9 +166,6 @@ pub enum StoppedExecutingReason {
     /// interrupt), or because the scheduler no longer wants to execute that
     /// process.
     KernelPreemption,
-
-    /// The process is waiting for a remote system call to finish executing
-    WaitingOnRemote
 }
 
 impl Kernel {
@@ -612,6 +609,7 @@ impl Kernel {
 
             match process.get_state() {
                 process::State::Running => {
+                    debug!("Hey we are running!!");
                     // Running means that this process expects to be running, so
                     // go ahead and set things up and switch to executing the
                     // process. Arming the scheduler timer instructs it to
@@ -651,6 +649,9 @@ impl Kernel {
                             if syscall != Syscall::YIELD {
                                 debug!("Syscalls upcoming!");
                                 if let Err(_response) = platform.remote_syscall(process, &syscall) {
+                                    /*if response == ReturnCode::EBUSY {
+                                        process.set_syscall_return_value(1);
+                                    }*/
                                     debug!("System call is now remote");
                                     process.set_waiting_state();
                                     continue;
@@ -887,20 +888,13 @@ impl Kernel {
                     break;
                 }
                 process::State::WaitingOnRemote => {
-                    debug!("Waiting On Remote!");
-                    /* If buffer is readable, then change the state */
-                    /*if platform.remote_syscall_cb() == Ok(()) {
-                        process.set_syscall_return_value(/*extract_return_value(&syscall)*/1);
-                        process.resume();
-                    }*/
-                    /* Else continue marking the state as WaitingOnRemote */
                     return_reason = StoppedExecutingReason::Stopped;
                     continue;
                 }
                 process::State::ReturnRemoteValue => {
                     debug!("Return Remote Value!");
-                    //process.set_syscall_return_value(1);
-                    process.resume();
+                    /*process.set_syscall_return_value(1);
+                    process.resume();*/
                     continue;
                 }
             }
