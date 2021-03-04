@@ -71,7 +71,6 @@ static mut DATA : [u32; NUM_ARGS] = [0; NUM_ARGS];
 static mut BUF : [u8; NUM_ARGS*4 + 1] = [0; BUF_SIZE];
 static mut BUF_CLI : [u8; NUM_ARGS*4 + 1] = [0; BUF_SIZE];
 static mut CLIENT : bool = false;
-static mut PROCESS_NAME : &str = "Placeholder";
 
 // Constants related to the configuration of the 15.4 network stack
 // TODO: Notably, the radio MAC addresses can be configured from userland at the moment
@@ -182,13 +181,6 @@ impl kernel::Platform for Imix {
             _ => f(None),
         }
     }
-    fn remote_syscall_cb(
-        &self,
-        /*syscall: &syscall::Syscall,
-        process: &dyn process::ProcessType,*/
-    ) -> Result<(), ReturnCode> {
-        return self.remote_system_call.check_read_buffer();
-    }
 
     fn remote_syscall(
         &self,
@@ -213,12 +205,8 @@ impl kernel::Platform for Imix {
                                                     *arg0,
                                                     *arg1);
                 self.remote_system_call.send_data();
-                //self.remote_system_call.enqueue_process(process.get_process_name());
-                debug!("Almost done with command!");
-                if self.remote_system_call.get_client() {
-                  return core::prelude::v1::Err(ReturnCode::EBUSY);
-                }
-                return core::prelude::v1::Err(ReturnCode::FAIL);
+                self.remote_system_call.enqueue_process(process.get_process_name());
+                return core::prelude::v1::Err(ReturnCode::EBUSY);
             },
             syscall::Syscall::ALLOW {
                 driver_number,
@@ -235,7 +223,7 @@ impl kernel::Platform for Imix {
                                                     *allow_address as usize,
                                                     *allow_size);
                 self.remote_system_call.send_data();
-                debug!("Almost done with allow!");
+                self.remote_system_call.enqueue_process(process.get_process_name());
                 core::prelude::v1::Err(ReturnCode::FAIL)
             },
             _ => Ok(()),

@@ -70,7 +70,7 @@ use core::convert::TryInto;
 use kernel::capabilities::ProcessManagementCapability;
 use kernel::common::cells::{TakeCell};
 use kernel::hil::{spi, gpio};
-use kernel::{AppId, debug, ReturnCode};
+use kernel::{debug, ReturnCode};
 use kernel::Kernel;
 
 const NUM_PROCS: usize = 4;
@@ -84,7 +84,6 @@ pub struct RemoteSystemCall<'a, C: ProcessManagementCapability> {
   pin: &'a dyn gpio::InterruptPin<'a>,
   kernel:  &'static Kernel,
   capability: C,
-  ////proc_name: &'static mut str,
 }
 
 impl<'a, C: ProcessManagementCapability> spi::SpiMasterClient for RemoteSystemCall<'a, C> {
@@ -130,7 +129,6 @@ impl<'a, C: ProcessManagementCapability> gpio::Client for RemoteSystemCall<'a, C
                 }
             }
         );
-        //self.set_processes_to_run();
     }
 }
 
@@ -145,7 +143,6 @@ impl<'a, C: ProcessManagementCapability> RemoteSystemCall<'a, C> {
       syscall_pin: &'a dyn gpio::InterruptPin<'a>,
       kernel: &'static Kernel,
       capability: C,
-      //proc_name: &'static mut str,
   ) -> RemoteSystemCall<'a, C> {
       RemoteSystemCall {
           spi: spi,
@@ -156,7 +153,6 @@ impl<'a, C: ProcessManagementCapability> RemoteSystemCall<'a, C> {
           pin: syscall_pin,
           kernel: kernel,
           capability: capability,
-          //proc_name: proc_name,
       }
   }
 
@@ -210,34 +206,6 @@ impl<'a, C: ProcessManagementCapability> RemoteSystemCall<'a, C> {
         },
     );
     self.fill_pass_buffer();
-  }
-
-  pub fn check_read_buffer(&self) -> Result<(), ReturnCode> {
-      let mut check : u8 = 0;
-      self.read_buffer.take().map_or_else(
-          || debug!("Read buffer not found!"),
-          |_read_buffer| {
-              check = 1;
-          }
-      );
-      if check == 1 {
-          debug!("Read buffer is full!");
-          return Ok(());
-      }
-      return core::prelude::v1::Err(ReturnCode::FAIL);
-  }
-
-  pub fn extract_return_value(&self) -> usize {
-      self.read_buffer.take().map_or_else(
-          || panic!("Read buffer disappeared!"),
-          |_read_buffer| {
-              //TODO: Currently just returning a static dummy value
-              //Not quite sure exactly what info to convey yet
-              debug!("Return Value has been conveyed to the app!");
-              return 1;
-          }
-      );
-      return 0;
   }
 
   pub fn get_client(&self) -> bool {
@@ -341,8 +309,8 @@ impl<'a, C: ProcessManagementCapability> RemoteSystemCall<'a, C> {
       return return_value; /*TODO MAKE THIS AN ERROR*/
   }
 
-  pub fn enqueue_process(&mut self, _app_id: AppId) {
-   //   self.apps[0] = app_id;
+  pub fn enqueue_process(&self, _name: &'static str) {
+      /* TODO*/
   }
 
   pub fn set_processes_to_run(&self) {

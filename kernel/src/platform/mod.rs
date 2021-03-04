@@ -68,12 +68,6 @@ pub trait Platform {
     ) -> Result<(), returncode::ReturnCode> {
         Ok(())
     }
-
-    fn remote_syscall_cb(
-        &self,
-    ) -> Result<(), returncode::ReturnCode> {
-       Ok(()) 
-    }
 }
 
 /// Interface for individual MCUs.
