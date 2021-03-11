@@ -423,14 +423,11 @@ impl SpiHw {
     }
 
     pub fn handle_interrupt(&self) {
-        kernel::debug!("Help :)");
         let spi = &SpiRegisterManager::new(&self);
 
         self.slave_client.map(|client| {
-            kernel::debug!("Help 2 :)");
             if spi.registers.sr.is_set(Status::NSSR) {
                 // NSSR
-                kernel::debug!("Help 3 :)");
                 client.chip_selected()
             }
             // TODO: Do we want to support byte-level interrupts too?
@@ -682,7 +679,6 @@ impl spi::SpiSlave for SpiHw {
 
 impl DMAClient for SpiHw {
     fn transfer_done(&self, _pid: DMAPeripheral) {
-        kernel::debug!("Transfer done!");
         // Only callback that the transfer is done if either:
         // 1) The transfer was TX only and TX finished
         // 2) The transfer was TX and RX, in that case wait for both of them to complete. Although

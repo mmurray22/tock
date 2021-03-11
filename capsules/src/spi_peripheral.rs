@@ -61,7 +61,6 @@ impl<'a, S: SpiSlaveDevice> SpiPeripheral<'a, S> {
     // Assumes checks for busy/etc. already done
     // Updates app.index to be index + length of op
     fn do_next_read_write(&self, app: &mut PeripheralApp) {
-        kernel::debug!("Do next read write L");
         let start = app.index;
         let len = cmp::min(app.len - start, self.kernel_len.get());
         let end = start + len;
@@ -258,7 +257,6 @@ impl<S: SpiSlaveDevice> SpiSlaveClient for SpiPeripheral<'_, S> {
 
     // Simple callback for when chip has been selected
     fn chip_selected(&self) {
-        kernel::debug!("Chip selected Help! ");
         self.app.map(move |app| {
             app.selected_callback.take().map(|mut cb| {
                 cb.schedule(app.len, 0, 0);
