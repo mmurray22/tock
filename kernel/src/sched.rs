@@ -880,10 +880,6 @@ impl Kernel {
                     return_reason = StoppedExecutingReason::Stopped;
                     continue;
                 }
-                process::State::ReturnRemoteValue => {
-                    debug!("Return Remote Value!");
-                    continue;
-                }
             }
         }
 
