@@ -70,20 +70,21 @@ use core::convert::TryInto;
 use kernel::capabilities::ProcessManagementCapability;
 use kernel::common::cells::{TakeCell};
 use kernel::hil::{spi, gpio};
-use kernel::{debug, ReturnCode};
+use kernel::ReturnCode;
 use kernel::Kernel;
 
 const NUM_PROCS: usize = 4;
 
 pub struct RemoteSystemCall<'a, C: ProcessManagementCapability> {
   spi: &'a dyn spi::SpiMasterDevice,
-  pass_buffer: TakeCell<'static, [u8]>, //write_buffer
+  pass_buffer: TakeCell<'static, [u8]>, // spi write buffer
   read_buffer: TakeCell<'static, [u8]>,
   data_buffer: TakeCell<'static, [u32]>,
   client: TakeCell<'static, bool>,
   pin: &'a dyn gpio::InterruptPin<'a>,
   kernel:  &'static Kernel,
   capability: C,
+  ids: TakeCell<'static, [usize]>,
 }
 
 impl<'a, C: ProcessManagementCapability> spi::SpiMasterClient for RemoteSystemCall<'a, C> {
@@ -94,7 +95,6 @@ impl<'a, C: ProcessManagementCapability> spi::SpiMasterClient for RemoteSystemCa
       mut read: Option<&'static mut [u8]>,
       _len: usize,
     ) {
-      debug!("Client replied!");
       self.client.map_or_else(
           || panic!("There is no client bool!"),
           |client| {
@@ -110,15 +110,6 @@ impl<'a, C: ProcessManagementCapability> spi::SpiMasterClient for RemoteSystemCa
 impl<'a, C: ProcessManagementCapability> gpio::Client for RemoteSystemCall<'a, C> {
     //Fires when toggled
     fn fired(&self) {
-        debug!("Hey! The GPIO Pin fired!");
-        self.read_buffer.map_or_else(
-            ||panic!("Wrong Client"),
-            |rbuf| {
-                for i in 0..rbuf.len() {
-                    debug!("{}", rbuf[i]);
-                }
-            }
-        );
         self.client.map_or_else(
             ||panic!("There is no client bool!"),
             |client| {
@@ -143,6 +134,7 @@ impl<'a, C: ProcessManagementCapability> RemoteSystemCall<'a, C> {
       syscall_pin: &'a dyn gpio::InterruptPin<'a>,
       kernel: &'static Kernel,
       capability: C,
+      ids: &'static mut [usize],
   ) -> RemoteSystemCall<'a, C> {
       RemoteSystemCall {
           spi: spi,
@@ -153,6 +145,7 @@ impl<'a, C: ProcessManagementCapability> RemoteSystemCall<'a, C> {
           pin: syscall_pin,
           kernel: kernel,
           capability: capability,
+          ids: TakeCell::new(ids),
       }
   }
 
@@ -200,9 +193,6 @@ impl<'a, C: ProcessManagementCapability> RemoteSystemCall<'a, C> {
             data_buffer[2] = arg_one as u32;
             data_buffer[3] = arg_two as u32;
             data_buffer[4] = arg_three as u32;
-            for i in 0..4 {
-                debug!("Data_buffer: {}", data_buffer[i]);
-            }
         },
     );
     self.fill_pass_buffer();
@@ -258,7 +248,7 @@ impl<'a, C: ProcessManagementCapability> RemoteSystemCall<'a, C> {
           |pass_buffer| {
               let mut checksum : u8 = 1;
               for i in 0..pass_buffer.len() {
-                  checksum ^= pass_buffer[i];
+                  checksum |= pass_buffer[i];
               }
               pass_buffer[pass_buffer.len() - 1] = checksum;
           }
@@ -290,7 +280,6 @@ impl<'a, C: ProcessManagementCapability> RemoteSystemCall<'a, C> {
                   ( ( (b[1] as u32) & 0xFF ) << 16 ) |
                   ( ( (b[2] as u32) & 0xFF ) << 8 ) |
                   ( ( (b[3] as u32) & 0xFF ) << 0 ) ;
-      debug!("y: {}", y);
       y
   }
 
@@ -309,19 +298,30 @@ impl<'a, C: ProcessManagementCapability> RemoteSystemCall<'a, C> {
       return return_value; /*TODO MAKE THIS AN ERROR*/
   }
 
-  pub fn enqueue_process(&self, _name: &'static str) {
-      /* TODO*/
+  pub fn enqueue_process(&self, id: usize) {
+      self.ids.map_or_else(
+          ||panic!("No id array!"),
+          |ids| {
+              ids[0] = id;
+          }
+      );
   }
 
   pub fn set_processes_to_run(&self) {
       let return_value : u32 = self.get_syscall_return_value();
+      let mut id : usize = 0;
+      self.ids.map_or_else(
+          ||panic!("No id array!"),
+          |ids| {
+            id = ids[0];
+          }
+      );
       self.kernel.process_each_capability(
           &self.capability,
           |proc| {
               let proc_state = proc.get_state();
               if proc_state == kernel::procs::State::WaitingOnRemote 
-              /*&& proc.name == name */{
-                  debug!("return value: {}", return_value);
+              && proc.appid().id() == id {
                   unsafe {
                     proc.set_syscall_return_value(return_value.try_into().unwrap());
                   }

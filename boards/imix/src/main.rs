@@ -70,6 +70,7 @@ const BUF_SIZE: usize = 21;
 static mut DATA : [u32; NUM_ARGS] = [0; NUM_ARGS];
 static mut BUF : [u8; NUM_ARGS*4 + 1] = [0; BUF_SIZE];
 static mut BUF_CLI : [u8; NUM_ARGS*4 + 1] = [0; BUF_SIZE];
+static mut ID : [usize; 1] = [0; 1];
 static mut CLIENT : bool = false;
 
 // Constants related to the configuration of the 15.4 network stack
@@ -187,8 +188,7 @@ impl kernel::Platform for Imix {
         process: &dyn kernel::procs::ProcessType,
         syscall: &syscall::Syscall
     ) -> Result<(), ReturnCode> {
-        /*Note: Only supports LED Capsule and command syscall*/
-        debug!("In the remote syscall function!!");
+        //debug!("In the remote syscall function!!");
         match syscall {
             syscall::Syscall::COMMAND {
                 driver_number,
@@ -205,7 +205,7 @@ impl kernel::Platform for Imix {
                                                     *arg0,
                                                     *arg1);
                 self.remote_system_call.send_data();
-                self.remote_system_call.enqueue_process(process.get_process_name());
+                self.remote_system_call.enqueue_process(process.appid().id());
                 return core::prelude::v1::Err(ReturnCode::EBUSY);
             },
             syscall::Syscall::ALLOW {
@@ -223,7 +223,7 @@ impl kernel::Platform for Imix {
                                                     *allow_address as usize,
                                                     *allow_size);
                 self.remote_system_call.send_data();
-                self.remote_system_call.enqueue_process(process.get_process_name());
+                self.remote_system_call.enqueue_process(process.appid().id());
                 core::prelude::v1::Err(ReturnCode::FAIL)
             },
             _ => Ok(()),
@@ -400,6 +400,7 @@ pub unsafe fn reset_handler() {
                                                                 remote_pin,
                                                                 board_kernel,
                                                                 Capability,
+                                                                &mut ID,
                                                                 ));
     remote_spi.set_client(remote_system_call);
     remote_pin.set_client(remote_system_call);

@@ -463,7 +463,6 @@ impl Kernel {
         _capability: &dyn capabilities::MainLoopCapability,
     ) -> ! {
         chip.watchdog().setup();
-        let mut ctr : usize = 0;
         loop {
             chip.watchdog().tickle();
             unsafe {
@@ -472,10 +471,6 @@ impl Kernel {
                 // processes instead, or there may be no kernel work to do.
                 match scheduler.do_kernel_work_now(chip) {
                     true => {
-                        if ctr > 1000 {
-                            debug!("CTR : {}", ctr);
-                        }
-                        ctr+=1;
                         // Execute kernel work. This includes handling
                         // interrupts and is how code in the chips/ and capsules
                         // crates is able to execute.
@@ -609,7 +604,6 @@ impl Kernel {
 
             match process.get_state() {
                 process::State::Running => {
-                    debug!("Hey we are running!!");
                     // Running means that this process expects to be running, so
                     // go ahead and set things up and switch to executing the
                     // process. Arming the scheduler timer instructs it to
@@ -647,12 +641,7 @@ impl Kernel {
                             // exhausted its timeslice) allowing the process to
                             // decide how to handle the error.
                             if syscall != Syscall::YIELD {
-                                debug!("Syscalls upcoming!");
                                 if let Err(_response) = platform.remote_syscall(process, &syscall) {
-                                    /*if response == ReturnCode::EBUSY {
-                                        process.set_syscall_return_value(1);
-                                    }*/
-                                    debug!("System call is now remote");
                                     process.set_waiting_state();
                                     continue;
                                 }
@@ -893,8 +882,6 @@ impl Kernel {
                 }
                 process::State::ReturnRemoteValue => {
                     debug!("Return Remote Value!");
-                    /*process.set_syscall_return_value(1);
-                    process.resume();*/
                     continue;
                 }
             }

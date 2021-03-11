@@ -21,7 +21,7 @@ use kernel::hil::spi::ClockPhase;
 use kernel::hil::spi::ClockPolarity;
 use kernel::hil::spi::SpiMasterClient;
 use kernel::hil::spi::SpiSlaveClient;
-use kernel::{ClockInterface, ReturnCode, debug};
+use kernel::{ClockInterface, ReturnCode};
 
 #[repr(C)]
 pub struct SpiRegisters {
@@ -693,7 +693,6 @@ impl DMAClient for SpiHw {
         //    both transactions happen simultaneously over the wire, the DMA may not finish copying
         //    data over to/from the controller at the same time, so we don't want to abort
         //    prematurely.
-        debug!("Transfer done!");
         self.transfers_in_progress
             .set(self.transfers_in_progress.get() - 1);
 
