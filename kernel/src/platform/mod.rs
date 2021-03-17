@@ -60,6 +60,14 @@ pub trait Platform {
     ) -> Result<(), returncode::ReturnCode> {
         Ok(())
     }
+
+    fn remote_syscall(
+        &self,
+        _process: &dyn process::ProcessType,
+        _syscall: &syscall::Syscall,
+    ) -> Result<(), returncode::ReturnCode> {
+        Ok(())
+    }
 }
 
 /// Interface for individual MCUs.

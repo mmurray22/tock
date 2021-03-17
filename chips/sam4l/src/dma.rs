@@ -1,9 +1,9 @@
 //! Implementation of the PDCA DMA peripheral.
-
 use crate::pm;
 use core::cell::Cell;
 use core::cmp;
 use core::sync::atomic;
+//use kernel::debug;
 use kernel::common::cells::VolatileCell;
 use kernel::common::cells::{OptionalCell, TakeCell};
 use kernel::common::registers::{register_bitfields, ReadOnly, ReadWrite, WriteOnly};
@@ -123,7 +123,7 @@ pub enum DMAChannelNum {
 /// means transfer data from peripheral to memory, `*_TX` means transfer data
 /// from memory to peripheral.
 #[allow(non_camel_case_types)]
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Copy, Clone, PartialEq, Debug)]
 #[repr(u8)]
 pub enum DMAPeripheral {
     USART0_RX = 0,
@@ -202,6 +202,7 @@ pub struct DMAChannel {
 }
 
 pub trait DMAClient {
+    //fn print_tye(&self, );
     fn transfer_done(&self, pid: DMAPeripheral);
 }
 
@@ -269,7 +270,9 @@ impl DMAChannel {
             .idr
             .write(Interrupt::TERR::SET + Interrupt::TRC::SET + Interrupt::RCZ::SET);
         let channel = registers.psr.get();
-
+        /*if channel == DMAPeripheral::SPI_TX || channel == DMAPeripheral::SPI_RX {
+            debug!("Channel: {:?}", channel);
+        }*/
         self.client.map(|client| {
             client.transfer_done(channel);
         });
@@ -308,6 +311,9 @@ impl DMAChannel {
     }
 
     pub fn do_transfer(&self, pid: DMAPeripheral, buf: &'static mut [u8], len: usize) {
+        /*if pid == DMAPeripheral::SPI_RX || pid == DMAPeripheral::SPI_TX {
+            debug!("Pid: {:?}, Len: {}", pid, len);
+        }*/
         self.prepare_transfer(pid, buf, len);
         self.start_transfer();
     }
@@ -319,6 +325,10 @@ impl DMAChannel {
         registers
             .idr
             .write(Interrupt::TERR::SET + Interrupt::TRC::SET + Interrupt::RCZ::SET);
+        //let channel = registers.psr.get();
+        /*if channel == DMAPeripheral::SPI_TX || channel == DMAPeripheral::SPI_RX {
+            debug!("Channel: {:?}", channel);
+        }*/
 
         // Reset counter
         registers.tcr.write(TransferCounter::TCV.val(0));

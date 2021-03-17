@@ -296,6 +296,15 @@ pub trait ProcessType {
     /// running.
     fn set_yielded_state(&self);
 
+    /// Move this process from the running state to the waiting for remote system calls state.
+    ///
+    /// This will fail (i.e. not do anything) if the process was not previously
+    /// running.
+    fn set_waiting_state(&self);
+
+    /// Move this process from the waiting state to the returning state
+    fn set_returning_state(&self);
+
     /// Move this process from running or yielded state into the stopped state.
     ///
     /// This will fail (i.e. not do anything) if the process was not either
@@ -304,8 +313,8 @@ pub trait ProcessType {
 
     /// Move this stopped process back into its original state.
     ///
-    /// This transitions a process from `StoppedRunning` -> `Running` or
-    /// `StoppedYielded` -> `Yielded`.
+    /// This transitions a process from `StoppedRunning` -> `Running`,
+    /// `StoppedYielded` -> `Yielded`, or `WaitingOnRemote` -> `Running`.
     fn resume(&self);
 
     /// Put this process in the fault state. This will trigger the
@@ -630,6 +639,17 @@ pub enum State {
     /// processes yet. It can also happen if an process is terminated and all
     /// of its state is reset as if it has not been executed yet.
     Unstarted,
+
+    /// The process is waiting on a system call to finish executing after it
+    /// was sent to a remote tockOS board to be executed. Once the process 
+    /// has received the system call response, its state will be restored to
+    /// running.
+    WaitingOnRemote,
+
+    /// The process has now received the remote system call results and before
+    /// resuming the process, we need to return the response sent from the
+    /// peripheral
+    ReturnRemoteValue,
 }
 
 /// The reaction the kernel should take when an app encounters a fault.
@@ -932,6 +952,20 @@ impl<C: Chip> ProcessType for Process<'_, C> {
         }
     }
 
+    fn set_waiting_state(&self) {
+        if self.state.get() == State::Running {
+            self.state.set(State::WaitingOnRemote);
+            self.kernel.decrement_work();
+        }
+    }
+
+    fn set_returning_state(&self) {
+        if self.state.get() == State::WaitingOnRemote {
+            self.state.set(State::ReturnRemoteValue);
+            self.kernel.increment_work();
+        }
+    }
+
     fn stop(&self) {
         match self.state.get() {
             State::Running => self.state.set(State::StoppedRunning),
@@ -942,8 +976,22 @@ impl<C: Chip> ProcessType for Process<'_, C> {
 
     fn resume(&self) {
         match self.state.get() {
-            State::StoppedRunning => self.state.set(State::Running),
-            State::StoppedYielded => self.state.set(State::Yielded),
+            State::StoppedRunning => {
+                self.kernel.increment_work();
+                self.state.set(State::Running);
+            },
+            State::StoppedYielded => {
+                //self.kernel.increment_work();
+                self.state.set(State::Yielded);
+            },
+            State::ReturnRemoteValue => {
+                //self.kernel.increment_work();
+                self.state.set(State::Running);
+            },
+            State::WaitingOnRemote => {
+                self.kernel.increment_work();
+                self.state.set(State::Running);
+            }, 
             _ => {} // Do nothing
         }
     }

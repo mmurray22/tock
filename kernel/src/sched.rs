@@ -463,6 +463,7 @@ impl Kernel {
         _capability: &dyn capabilities::MainLoopCapability,
     ) -> ! {
         chip.watchdog().setup();
+        let mut ctr : usize = 0;
         loop {
             chip.watchdog().tickle();
             unsafe {
@@ -471,6 +472,10 @@ impl Kernel {
                 // processes instead, or there may be no kernel work to do.
                 match scheduler.do_kernel_work_now(chip) {
                     true => {
+                        if ctr > 1000 {
+                            debug!("CTR : {}", ctr);
+                        }
+                        ctr+=1;
                         // Execute kernel work. This includes handling
                         // interrupts and is how code in the chips/ and capsules
                         // crates is able to execute.
@@ -545,7 +550,7 @@ impl Kernel {
     /// passed timeslice is smaller than `MIN_QUANTA_THRESHOLD_US` the process
     /// will not execute, and this function will return immediately.
     ///
-    /// This function returns a tuple indicating the reason the reason this
+    /// This function returns a tuple indicating the reason this
     /// function has returned to the scheduler, and the amount of time the
     /// process spent executing (or `None` if the process was run
     /// cooperatively). Notably, time spent in this function by the kernel,
@@ -577,7 +582,7 @@ impl Kernel {
         timeslice_us.map(|timeslice| scheduler_timer.start(timeslice));
 
         // Need to track why the process is no longer executing so that we can
-        // inform the scheduler.
+        // inform the schedulere
         let mut return_reason = StoppedExecutingReason::NoWorkLeft;
 
         // Since the timeslice counts both the process's execution time and the
@@ -604,6 +609,7 @@ impl Kernel {
 
             match process.get_state() {
                 process::State::Running => {
+                    debug!("Hey we are running!!");
                     // Running means that this process expects to be running, so
                     // go ahead and set things up and switch to executing the
                     // process. Arming the scheduler timer instructs it to
@@ -641,6 +647,16 @@ impl Kernel {
                             // exhausted its timeslice) allowing the process to
                             // decide how to handle the error.
                             if syscall != Syscall::YIELD {
+                                debug!("Syscalls upcoming!");
+                                if let Err(_response) = platform.remote_syscall(process, &syscall) {
+                                    /*if response == ReturnCode::EBUSY {
+                                        process.set_syscall_return_value(1);
+                                    }*/
+                                    debug!("System call is now remote");
+                                    process.set_waiting_state();
+                                    continue;
+                                }
+
                                 if let Err(response) = platform.filter_syscall(process, &syscall) {
                                     process.set_syscall_return_value(response.into());
                                     continue;
@@ -870,6 +886,16 @@ impl Kernel {
                 process::State::StoppedFaulted => {
                     return_reason = StoppedExecutingReason::StoppedFaulted;
                     break;
+                }
+                process::State::WaitingOnRemote => {
+                    return_reason = StoppedExecutingReason::Stopped;
+                    continue;
+                }
+                process::State::ReturnRemoteValue => {
+                    debug!("Return Remote Value!");
+                    /*process.set_syscall_return_value(1);
+                    process.resume();*/
+                    continue;
                 }
             }
         }

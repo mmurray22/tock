@@ -21,7 +21,7 @@ use kernel::hil::spi::ClockPhase;
 use kernel::hil::spi::ClockPolarity;
 use kernel::hil::spi::SpiMasterClient;
 use kernel::hil::spi::SpiSlaveClient;
-use kernel::{ClockInterface, ReturnCode};
+use kernel::{ClockInterface, ReturnCode, debug};
 
 #[repr(C)]
 pub struct SpiRegisters {
@@ -449,6 +449,7 @@ impl SpiHw {
         read_buffer: Option<&'static mut [u8]>,
         len: usize,
     ) -> ReturnCode {
+        //debug!("HELLO READ WRITE BYTES!");
         if write_buffer.is_none() && read_buffer.is_none() {
             return ReturnCode::EINVAL;
         }
@@ -459,6 +460,7 @@ impl SpiHw {
         // Determine how many bytes to move based on the shortest of the
         // write_buffer length, the read_buffer length, and the user requested
         // len.
+        //debug!("READ WRITE BYTES 2");
         let mut count: usize = len;
         write_buffer
             .as_ref()
@@ -481,6 +483,7 @@ impl SpiHw {
         // SPI's baud rate, transfer_done does not capture the interrupt
         // signaling the RX is done - may be due to missing the first read
         // byte when you start read after write.
+        //debug!("READ WRITE BYTES 3");
         read_buffer.map(|rbuf| {
             self.transfers_in_progress
                 .set(self.transfers_in_progress.get() + 1);
@@ -494,11 +497,14 @@ impl SpiHw {
         // For transfers 4 bytes or longer, this will work as expected.
         // For shorter transfers, the first byte will be missing.
         write_buffer.map(|wbuf| {
+            //debug!("BEGIN OF WRITE");
             self.transfers_in_progress
                 .set(self.transfers_in_progress.get() + 1);
             self.dma_write.map(move |write| {
+                //debug!("BEFORE WRITE TRANSFER!");
                 write.enable();
                 write.do_transfer(DMAPeripheral::SPI_TX, wbuf, count);
+                //debug!("WRITE DID TRASNFER!");
             });
         });
 
@@ -687,7 +693,7 @@ impl DMAClient for SpiHw {
         //    both transactions happen simultaneously over the wire, the DMA may not finish copying
         //    data over to/from the controller at the same time, so we don't want to abort
         //    prematurely.
-
+        debug!("Transfer done!");
         self.transfers_in_progress
             .set(self.transfers_in_progress.get() - 1);
 

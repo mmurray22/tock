@@ -11,22 +11,26 @@
 #![deny(missing_docs)]
 
 mod imix_components;
+use capsules::system_call_interface::RemoteSystemCall;
+//use kernel::hil::spi::SpiMasterClient;
 use capsules::alarm::AlarmDriver;
-use capsules::net::ieee802154::MacAddress;
-use capsules::net::ipv6::ip_utils::IPAddr;
+//use capsules::net::ieee802154::MacAddress;
+//use capsules::net::ipv6::ip_utils::IPAddr;
 use capsules::virtual_alarm::VirtualMuxAlarm;
 use capsules::virtual_i2c::MuxI2C;
-use capsules::virtual_spi::VirtualSpiMasterDevice;
-use kernel::capabilities;
+//use capsules::virtual_spi::VirtualSpiMasterDevice;
+use kernel::{capabilities, ReturnCode, syscall};
 use kernel::common::dynamic_deferred_call::{DynamicDeferredCall, DynamicDeferredCallClientState};
 use kernel::component::Component;
 use kernel::hil::i2c::I2CMaster;
-use kernel::hil::radio;
+//use kernel::hil::radio;
 #[allow(unused_imports)]
 use kernel::hil::radio::{RadioConfig, RadioData};
 use kernel::hil::Controller;
 #[allow(unused_imports)]
 use kernel::{create_capability, debug, debug_gpio, static_init};
+
+use core::ptr::NonNull;
 
 use components;
 use components::alarm::{AlarmDriverComponent, AlarmMuxComponent};
@@ -40,12 +44,13 @@ use components::nrf51822::Nrf51822Component;
 use components::process_console::ProcessConsoleComponent;
 use components::rng::RngComponent;
 use components::si7021::{HumidityComponent, SI7021Component};
-use components::spi::{SpiComponent, SpiSyscallComponent};
+use components::spi::SpiComponent;
+//use components::spi::SpiSyscallComponent;
 use imix_components::adc::AdcComponent;
 use imix_components::fxos8700::NineDofComponent;
-use imix_components::rf233::RF233Component;
-use imix_components::udp_driver::UDPDriverComponent;
-use imix_components::udp_mux::UDPMuxComponent;
+//use imix_components::rf233::RF233Component;
+//use imix_components::udp_driver::UDPDriverComponent;
+//use imix_components::udp_mux::UDPMuxComponent;
 use imix_components::usb::UsbComponent;
 
 /// Support routines for debugging I/O.
@@ -61,8 +66,13 @@ mod test;
 mod power;
 
 // State for loading apps.
-
+const NUM_ARGS : usize = 5;
 const NUM_PROCS: usize = 4;
+const BUF_SIZE: usize = 21;
+static mut DATA : [u32; NUM_ARGS] = [0; NUM_ARGS];
+static mut BUF : [u8; NUM_ARGS*4 + 1] = [0; BUF_SIZE];
+static mut BUF_CLI : [u8; NUM_ARGS*4 + 1] = [0; BUF_SIZE];
+static mut CLIENT : bool = false;
 
 // Constants related to the configuration of the 15.4 network stack
 // TODO: Notably, the radio MAC addresses can be configured from userland at the moment
@@ -72,11 +82,12 @@ const NUM_PROCS: usize = 4;
 // have those devices talk to each other without having to modify the kernel flashed
 // onto each device. This makes MAC address configuration a good target for capabilities -
 // only allow one app per board to have control of MAC address configuration?
-const RADIO_CHANNEL: u8 = 26;
+/*const RADIO_CHANNEL: u8 = 26;
 const DST_MAC_ADDR: MacAddress = MacAddress::Short(49138);
 const DEFAULT_CTX_PREFIX_LEN: u8 = 8; //Length of context for 6LoWPAN compression
 const DEFAULT_CTX_PREFIX: [u8; 16] = [0x0 as u8; 16]; //Context for 6LoWPAN Compression
 const PAN_ID: u16 = 0xABCD;
+*/
 
 // how should the kernel respond when a process faults
 const FAULT_RESPONSE: kernel::procs::FaultResponse = kernel::procs::FaultResponse::Panic;
@@ -109,14 +120,14 @@ struct Imix {
         'static,
         sam4l::acifc::Acifc<'static>,
     >,
-    spi: &'static capsules::spi_controller::Spi<
+    /*spi: &'static capsules::spi_controller::Spi<
         'static,
         VirtualSpiMasterDevice<'static, sam4l::spi::SpiHw>,
-    >,
+    >,*/
     ipc: kernel::ipc::IPC,
     ninedof: &'static capsules::ninedof::NineDof<'static>,
-    radio_driver: &'static capsules::ieee802154::RadioDriver<'static>,
-    udp_driver: &'static capsules::net::udp::UDPDriver<'static>,
+    //radio_driver: &'static capsules::ieee802154::RadioDriver<'static>,
+    //udp_driver: &'static capsules::net::udp::UDPDriver<'static>,
     crc: &'static capsules::crc::Crc<'static, sam4l::crccu::Crccu<'static>>,
     usb_driver: &'static capsules::usb::usb_user::UsbSyscallDriver<
         'static,
@@ -124,6 +135,7 @@ struct Imix {
     >,
     nrf51822: &'static capsules::nrf51822_serialization::Nrf51822Serialization<'static>,
     nonvolatile_storage: &'static capsules::nonvolatile_storage_driver::NonvolatileStorage<'static>,
+    remote_system_call: &'static capsules::system_call_interface::RemoteSystemCall<'static, Capability>,
 }
 
 // The RF233 radio stack requires our buffers for its SPI operations:
@@ -135,9 +147,12 @@ struct Imix {
 //   3 + 4: two small buffers for performing registers
 //      operations (one read, one write).
 
-static mut RF233_BUF: [u8; radio::MAX_BUF_SIZE] = [0x00; radio::MAX_BUF_SIZE];
+/*static mut RF233_BUF: [u8; radio::MAX_BUF_SIZE] = [0x00; radio::MAX_BUF_SIZE];
 static mut RF233_REG_WRITE: [u8; 2] = [0x00; 2];
 static mut RF233_REG_READ: [u8; 2] = [0x00; 2];
+*/
+struct Capability;
+unsafe impl capabilities::ProcessManagementCapability for Capability {}
 
 impl kernel::Platform for Imix {
     fn with_driver<F, R>(&self, driver_num: usize, f: F) -> R
@@ -148,7 +163,7 @@ impl kernel::Platform for Imix {
             capsules::console::DRIVER_NUM => f(Some(self.console)),
             capsules::gpio::DRIVER_NUM => f(Some(self.gpio)),
             capsules::alarm::DRIVER_NUM => f(Some(self.alarm)),
-            capsules::spi_controller::DRIVER_NUM => f(Some(self.spi)),
+            //capsules::spi_controller::DRIVER_NUM => f(Some(self.spi)),
             capsules::adc::DRIVER_NUM => f(Some(self.adc)),
             capsules::led::DRIVER_NUM => f(Some(self.led)),
             capsules::button::DRIVER_NUM => f(Some(self.button)),
@@ -159,13 +174,84 @@ impl kernel::Platform for Imix {
             capsules::ninedof::DRIVER_NUM => f(Some(self.ninedof)),
             capsules::crc::DRIVER_NUM => f(Some(self.crc)),
             capsules::usb::usb_user::DRIVER_NUM => f(Some(self.usb_driver)),
-            capsules::ieee802154::DRIVER_NUM => f(Some(self.radio_driver)),
-            capsules::net::udp::DRIVER_NUM => f(Some(self.udp_driver)),
+            //capsules::ieee802154::DRIVER_NUM => f(Some(self.radio_driver)),
+            //capsules::net::udp::DRIVER_NUM => f(Some(self.udp_driver)),
             capsules::nrf51822_serialization::DRIVER_NUM => f(Some(self.nrf51822)),
             capsules::nonvolatile_storage_driver::DRIVER_NUM => f(Some(self.nonvolatile_storage)),
             capsules::rng::DRIVER_NUM => f(Some(self.rng)),
             kernel::ipc::DRIVER_NUM => f(Some(&self.ipc)),
             _ => f(None),
+        }
+    }
+
+    fn remote_syscall(
+        &self,
+        process: &dyn kernel::procs::ProcessType,
+        syscall: &syscall::Syscall
+    ) -> Result<(), ReturnCode> {
+        /*Note: Only supports LED Capsule and command syscall*/
+        debug!("In the remote syscall function!!");
+        match syscall {
+            syscall::Syscall::COMMAND {
+                driver_number,
+                subdriver_number,
+                arg0,
+                arg1,
+            } => {
+                if self.remote_system_call.determine_route(*driver_number) == 0 {
+                    return Ok(());
+                }
+                self.remote_system_call.fill_buffer(2,
+                                                    *driver_number,
+                                                    *subdriver_number,
+                                                    *arg0,
+                                                    *arg1);
+                self.remote_system_call.send_data();
+                self.remote_system_call.enqueue_process(process.get_process_name());
+                return core::prelude::v1::Err(ReturnCode::EBUSY);
+            },
+            syscall::Syscall::ALLOW {
+                driver_number,
+                subdriver_number,
+                allow_address,
+                allow_size,
+            } => {
+                if self.remote_system_call.determine_route(*driver_number) == 0 {
+                    return Ok(());
+                }
+                self.remote_system_call.fill_buffer(3,
+                                                    *driver_number,
+                                                    *subdriver_number,
+                                                    *allow_address as usize,
+                                                    *allow_size);
+                self.remote_system_call.send_data();
+                self.remote_system_call.enqueue_process(process.get_process_name());
+                core::prelude::v1::Err(ReturnCode::FAIL)
+            },
+            syscall::Syscall::SUBSCRIBE {
+                driver_number,
+                subdriver_number,
+                callback_ptr,
+                appdata,
+            } => {
+                if self.remote_system_call.determine_route(*driver_number) == 0 {
+                    return Ok(());
+                }
+                self.remote_system_call.fill_buffer(1,
+                                                    *driver_number,
+                                                    *subdriver_number,
+                                                    *callback_ptr as usize,
+                                                    *appdata);
+
+                match NonNull::new(*callback_ptr as *mut _) {
+                    Some(cb) => self.remote_system_call.subscribe(*driver_number,*subdriver_number, cb, *appdata),
+                    None => return core::prelude::v1::Err(ReturnCode::FAIL),
+                };
+
+                self.remote_system_call.enqueue_process(process.get_process_name());
+                core::prelude::v1::Err(ReturnCode::FAIL)
+            },
+            _ => Ok(()),
         }
     }
 }
@@ -238,7 +324,8 @@ unsafe fn set_pin_primary_functions() {
     PC[28].configure(None); //... D5          -- GPIO Pin
     PC[29].configure(None); //... D4          -- GPIO Pin
     PC[30].configure(None); //... D3          -- GPIO Pin
-    PC[31].configure(None); //... D2          -- GPIO Pin
+    /* ORIGINAL: PC[31].configure(None); //... D2          -- GPIO Pin */
+    PC[31].configure(None); //... D2          -- RSYSCALL
 }
 
 /// Reset Handler.
@@ -324,36 +411,37 @@ pub unsafe fn reset_handler() {
     let humidity = HumidityComponent::new(board_kernel, si7021).finalize(());
     let ninedof = NineDofComponent::new(board_kernel, mux_i2c, &sam4l::gpio::PC[13]).finalize(());
 
-    // SPI MUX, SPI syscall driver and RF233 radio
-    let mux_spi = components::spi::SpiMuxComponent::new(&sam4l::spi::SPI)
+    let remote_mux_spi = components::spi::SpiMuxComponent::new(&sam4l::spi::SPI)
         .finalize(components::spi_mux_component_helper!(sam4l::spi::SpiHw));
-
-    let spi_syscalls = SpiSyscallComponent::new(mux_spi, 3)
-        .finalize(components::spi_syscall_component_helper!(sam4l::spi::SpiHw));
-    let rf233_spi = SpiComponent::new(mux_spi, 3)
+    let remote_spi = SpiComponent::new(remote_mux_spi, 2)
         .finalize(components::spi_component_helper!(sam4l::spi::SpiHw));
-    let rf233 = RF233Component::new(
-        rf233_spi,
-        &sam4l::gpio::PA[09], // reset
-        &sam4l::gpio::PA[10], // sleep
-        &sam4l::gpio::PA[08], // irq
-        &sam4l::gpio::PA[08],
-        RADIO_CHANNEL,
-    )
-    .finalize(());
+    let remote_pin = &sam4l::gpio::PC[31];
+    let remote_system_call = static_init!(capsules::system_call_interface::RemoteSystemCall<'static, Capability>,
+                                          RemoteSystemCall::new(&mut BUF,
+                                                                &mut BUF_CLI,
+                                                                &mut DATA,
+                                                                &mut CLIENT,
+                                                                remote_spi,
+                                                                remote_pin,
+                                                                board_kernel,
+                                                                Capability,
+                                                                ));
+    remote_spi.set_client(remote_system_call);
+    remote_pin.set_client(remote_system_call);
+    remote_system_call.configure();
 
     let adc = AdcComponent::new(board_kernel).finalize(());
     let gpio = GpioComponent::new(
         board_kernel,
         components::gpio_component_helper!(
             sam4l::gpio::GPIOPin,
-            0 => &sam4l::gpio::PC[31],
-            1 => &sam4l::gpio::PC[30],
-            2 => &sam4l::gpio::PC[29],
-            3 => &sam4l::gpio::PC[28],
-            4 => &sam4l::gpio::PC[27],
-            5 => &sam4l::gpio::PC[26],
-            6 => &sam4l::gpio::PA[20]
+            //0 => &sam4l::gpio::PC[31],
+            0 => &sam4l::gpio::PC[30],
+            1 => &sam4l::gpio::PC[29],
+            2 => &sam4l::gpio::PC[28],
+            3 => &sam4l::gpio::PC[27],
+            4 => &sam4l::gpio::PC[26],
+            5 => &sam4l::gpio::PA[20]
         ),
     )
     .finalize(components::gpio_component_buf!(sam4l::gpio::GPIOPin));
@@ -398,12 +486,12 @@ pub unsafe fn reset_handler() {
     // of the serial number of the sam4l for this device.  In the
     // future, we could generate the MAC address by hashing the full
     // 120-bit serial number
-    let serial_num: sam4l::serial_num::SerialNum = sam4l::serial_num::SerialNum::new();
-    let serial_num_bottom_16 = (serial_num.get_lower_64() & 0x0000_0000_0000_ffff) as u16;
-    let src_mac_from_serial_num: MacAddress = MacAddress::Short(serial_num_bottom_16);
+ //   let serial_num: sam4l::serial_num::SerialNum = sam4l::serial_num::SerialNum::new();
+ //   let serial_num_bottom_16 = (serial_num.get_lower_64() & 0x0000_0000_0000_ffff) as u16;
+ //   let src_mac_from_serial_num: MacAddress = MacAddress::Short(serial_num_bottom_16);
 
     // Can this initialize be pushed earlier, or into component? -pal
-    rf233.initialize(&mut RF233_BUF, &mut RF233_REG_WRITE, &mut RF233_REG_READ);
+    /*rf233.initialize(&mut RF233_BUF, &mut RF233_REG_WRITE, &mut RF233_REG_READ);
     let (radio_driver, mux_mac) = components::ieee802154::Ieee802154Component::new(
         board_kernel,
         rf233,
@@ -414,7 +502,7 @@ pub unsafe fn reset_handler() {
     .finalize(components::ieee802154_component_helper!(
         capsules::rf233::RF233<'static, VirtualSpiMasterDevice<'static, sam4l::spi::SpiHw>>,
         sam4l::aes::Aes<'static>
-    ));
+    ));*/
 
     let usb_driver = UsbComponent::new(board_kernel).finalize(());
 
@@ -438,7 +526,7 @@ pub unsafe fn reset_handler() {
         sam4l::flashcalw::FLASHCALW
     ));
 
-    let local_ip_ifaces = static_init!(
+    /*let local_ip_ifaces = static_init!(
         [IPAddr; 3],
         [
             IPAddr([
@@ -451,9 +539,9 @@ pub unsafe fn reset_handler() {
             ]),
             IPAddr::generate_from_mac(src_mac_from_serial_num),
         ]
-    );
+    );*/
 
-    let (udp_send_mux, udp_recv_mux, udp_port_table) = UDPMuxComponent::new(
+    /*let (udp_send_mux, udp_recv_mux, udp_port_table) = UDPMuxComponent::new(
         mux_mac,
         DEFAULT_CTX_PREFIX_LEN,
         DEFAULT_CTX_PREFIX,
@@ -473,7 +561,7 @@ pub unsafe fn reset_handler() {
         udp_port_table,
         local_ip_ifaces,
     )
-    .finalize(());
+    .finalize(());*/
 
     let imix = Imix {
         pconsole,
@@ -489,14 +577,15 @@ pub unsafe fn reset_handler() {
         rng,
         analog_comparator,
         crc,
-        spi: spi_syscalls,
+        //spi: spi_syscalls,
         ipc: kernel::ipc::IPC::new(board_kernel, &grant_cap),
         ninedof,
-        radio_driver,
-        udp_driver,
+        //radio_driver,
+        //udp_driver,
         usb_driver,
         nrf51822: nrf_serialization,
         nonvolatile_storage: nonvolatile_storage,
+        remote_system_call: remote_system_call,
     };
 
     let chip = static_init!(sam4l::chip::Sam4l, sam4l::chip::Sam4l::new());
@@ -507,8 +596,8 @@ pub unsafe fn reset_handler() {
 
     // These two lines need to be below the creation of the chip for
     // initialization to work.
-    rf233.reset();
-    rf233.start();
+    //rf233.reset();
+    //rf233.start();
 
     imix.pconsole.start();
 

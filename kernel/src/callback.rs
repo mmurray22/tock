@@ -82,7 +82,7 @@ impl fmt::Debug for AppId {
 impl AppId {
     /// Create a new `AppId` object based on the app identifier and its index
     /// in the processes array.
-    pub(crate) fn new(kernel: &'static Kernel, identifier: usize, index: usize) -> AppId {
+    pub fn new(kernel: &'static Kernel, identifier: usize, index: usize) -> AppId {
         AppId {
             kernel: kernel,
             identifier: identifier,
@@ -174,7 +174,7 @@ pub struct Callback {
 }
 
 impl Callback {
-    pub(crate) fn new(
+    pub fn new(
         app_id: AppId,
         callback_id: CallbackId,
         appdata: usize,
