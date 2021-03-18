@@ -67,10 +67,12 @@
 
 use crate::driver;
 use core::convert::TryInto;
+use core::ptr::NonNull;
 use kernel::capabilities::ProcessManagementCapability;
-use kernel::common::cells::{TakeCell};
+use kernel::common::cells::{OptionalCell, TakeCell};
 use kernel::hil::{spi, gpio};
-use kernel::ReturnCode;
+use kernel::{debug, AppId, Callback, ReturnCode};
+use kernel::callback::CallbackId;
 use kernel::Kernel;
 
 const NUM_PROCS: usize = 4;
@@ -83,6 +85,7 @@ pub struct RemoteSystemCall<'a, C: ProcessManagementCapability> {
   client: TakeCell<'static, bool>,
   pin: &'a dyn gpio::InterruptPin<'a>,
   kernel:  &'static Kernel,
+  callback: OptionalCell<Callback>,
   capability: C,
   ids: TakeCell<'static, [usize]>,
 }
@@ -117,6 +120,8 @@ impl<'a, C: ProcessManagementCapability> gpio::Client for RemoteSystemCall<'a, C
                     self.send_data();
                 } else {
                     self.set_processes_to_run();
+                    // Initiate callback
+                    self.callback.map(|cb| cb.schedule(self.get_syscall_return_value().try_into().unwrap(),0,0));
                 }
             }
         );
@@ -144,6 +149,7 @@ impl<'a, C: ProcessManagementCapability> RemoteSystemCall<'a, C> {
           client: TakeCell::new(client),
           pin: syscall_pin,
           kernel: kernel,
+          callback: OptionalCell::empty(),
           capability: capability,
           ids: TakeCell::new(ids),
       }
@@ -164,7 +170,24 @@ impl<'a, C: ProcessManagementCapability> RemoteSystemCall<'a, C> {
       self.pin.set_floating_state(gpio::FloatingState::PullNone);
       self.pin.enable_interrupts(gpio::InterruptEdge::RisingEdge);
   }
- 
+
+  pub fn subscribe(
+      &self,
+      driver_num: usize,
+      subdriver_number: usize,
+      cb_ptr: NonNull<*mut ()>,
+      appdata: usize) -> ReturnCode {
+      let callback_id = CallbackId{
+          driver_num: driver_num,
+          subscribe_num: subdriver_number,
+      };
+      // TODO: find right identifier and index values
+      let app_id = AppId::new(self.kernel, 1, 1);
+      let cb = Callback::new(app_id, callback_id, appdata, cb_ptr);
+      self.callback.set(cb);
+      ReturnCode::SUCCESS
+  }
+
   // Determines whether or not to reroute system call to be remote
   pub fn determine_route(&self, driver: usize) -> usize {
     // TODO: Need to implement true metric for determining route //
@@ -223,7 +246,7 @@ impl<'a, C: ProcessManagementCapability> RemoteSystemCall<'a, C> {
   // Helper function to fill pass buffer from data buffer
   // Also creates checksum for the data
   // All the information transferred by pass_buffer include:
-  // syscall_num, driver_num, arg0, arg1, arg2, arg3, checksum 
+  // syscall_num, driver_num, arg0, arg1, arg2, arg3, checksum
   fn fill_pass_buffer(&self) {
       self.data_buffer.map_or_else(
           || panic!("There is no data buffer!"),
@@ -232,7 +255,7 @@ impl<'a, C: ProcessManagementCapability> RemoteSystemCall<'a, C> {
                   for i in 0..data_buffer.len() {
                       let temp_arr = self.transform_u32_to_u8_array(data_buffer[i]);
                       for j in 0..NUM_PROCS {
-                          pass_buffer[j + 4*i] = temp_arr[j]; 
+                          pass_buffer[j + 4*i] = temp_arr[j];
                       }
                   }
               });
@@ -273,7 +296,7 @@ impl<'a, C: ProcessManagementCapability> RemoteSystemCall<'a, C> {
       self.send_over_spi();
       ReturnCode::SUCCESS
   }
-  
+
   // Helper function to transform the u8 array to u32
   fn transform_u8_array_to_u32(&self, b: [u8; 4]) -> u32 {
       let y : u32 = ( ( (b[0] as u32) & 0xFF ) << 24 ) |

@@ -21,7 +21,7 @@ use kernel::hil::spi::ClockPhase;
 use kernel::hil::spi::ClockPolarity;
 use kernel::hil::spi::SpiMasterClient;
 use kernel::hil::spi::SpiSlaveClient;
-use kernel::{ClockInterface, ReturnCode};
+use kernel::{ClockInterface, ReturnCode, debug};
 
 #[repr(C)]
 pub struct SpiRegisters {

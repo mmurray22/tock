@@ -98,7 +98,8 @@ pub mod introspection;
 pub mod ipc;
 pub mod syscall;
 
-mod callback;
+// TODO: is this necessary?
+pub mod callback;
 mod config;
 mod driver;
 mod grant;

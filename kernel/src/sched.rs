@@ -463,6 +463,7 @@ impl Kernel {
         _capability: &dyn capabilities::MainLoopCapability,
     ) -> ! {
         chip.watchdog().setup();
+        let mut ctr : usize = 0;
         loop {
             chip.watchdog().tickle();
             unsafe {
@@ -471,6 +472,10 @@ impl Kernel {
                 // processes instead, or there may be no kernel work to do.
                 match scheduler.do_kernel_work_now(chip) {
                     true => {
+                        if ctr > 1000 {
+                            debug!("CTR : {}", ctr);
+                        }
+                        ctr+=1;
                         // Execute kernel work. This includes handling
                         // interrupts and is how code in the chips/ and capsules
                         // crates is able to execute.
@@ -604,6 +609,7 @@ impl Kernel {
 
             match process.get_state() {
                 process::State::Running => {
+                    debug!("Hey we are running!!");
                     // Running means that this process expects to be running, so
                     // go ahead and set things up and switch to executing the
                     // process. Arming the scheduler timer instructs it to

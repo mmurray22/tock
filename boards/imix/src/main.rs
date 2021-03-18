@@ -30,6 +30,8 @@ use kernel::hil::Controller;
 #[allow(unused_imports)]
 use kernel::{create_capability, debug, debug_gpio, static_init};
 
+use core::ptr::NonNull;
+
 use components;
 use components::alarm::{AlarmDriverComponent, AlarmMuxComponent};
 use components::console::{ConsoleComponent, UartMuxComponent};
@@ -78,7 +80,6 @@ static mut BUF : [u8; NUM_ARGS*4 + 1] = [0; BUF_SIZE];
 static mut BUF_CLI : [u8; NUM_ARGS*4 + 1] = [0; BUF_SIZE];
 static mut ID : [usize; 1] = [0; 1];
 static mut CLIENT : bool = false;
-
 
 // Constants related to the configuration of the 15.4 network stack
 // TODO: Notably, the radio MAC addresses can be configured from userland at the moment
@@ -230,6 +231,29 @@ impl kernel::Platform for Imix {
                                                     *allow_address as usize,
                                                     *allow_size);
                 self.remote_system_call.send_data();
+                self.remote_system_call.enqueue_process(process.appid().id());
+                core::prelude::v1::Err(ReturnCode::FAIL)
+            },
+            syscall::Syscall::SUBSCRIBE {
+                driver_number,
+                subdriver_number,
+                callback_ptr,
+                appdata,
+            } => {
+                if self.remote_system_call.determine_route(*driver_number) == 0 {
+                    return Ok(());
+                }
+                self.remote_system_call.fill_buffer(1,
+                                                    *driver_number,
+                                                    *subdriver_number,
+                                                    *callback_ptr as usize,
+                                                    *appdata);
+
+                match NonNull::new(*callback_ptr as *mut _) {
+                    Some(cb) => self.remote_system_call.subscribe(*driver_number,*subdriver_number, cb, *appdata),
+                    None => return core::prelude::v1::Err(ReturnCode::FAIL),
+                };
+
                 self.remote_system_call.enqueue_process(process.appid().id());
                 core::prelude::v1::Err(ReturnCode::FAIL)
             },
