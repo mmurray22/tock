@@ -66,12 +66,19 @@ mod test;
 mod power;
 
 // State for loading apps.
+const NUM_PROCS : usize = 4;
+
+// Remote system call constants 
 const NUM_ARGS : usize = 5;
-const NUM_PROCS: usize = 4;
 const BUF_SIZE: usize = 21;
+const COMMAND_NUM : usize = 2;
+const ALLOW_NUM : usize = 3;
+
+// Remote system call static buffers and variables
 static mut DATA : [u32; NUM_ARGS] = [0; NUM_ARGS];
 static mut BUF : [u8; NUM_ARGS*4 + 1] = [0; BUF_SIZE];
 static mut BUF_CLI : [u8; NUM_ARGS*4 + 1] = [0; BUF_SIZE];
+static mut ID : [usize; 1] = [0; 1];
 static mut CLIENT : bool = false;
 
 // Constants related to the configuration of the 15.4 network stack
@@ -82,6 +89,7 @@ static mut CLIENT : bool = false;
 // have those devices talk to each other without having to modify the kernel flashed
 // onto each device. This makes MAC address configuration a good target for capabilities -
 // only allow one app per board to have control of MAC address configuration?
+
 /*const RADIO_CHANNEL: u8 = 26;
 const DST_MAC_ADDR: MacAddress = MacAddress::Short(49138);
 const DEFAULT_CTX_PREFIX_LEN: u8 = 8; //Length of context for 6LoWPAN compression
@@ -189,8 +197,6 @@ impl kernel::Platform for Imix {
         process: &dyn kernel::procs::ProcessType,
         syscall: &syscall::Syscall
     ) -> Result<(), ReturnCode> {
-        /*Note: Only supports LED Capsule and command syscall*/
-        debug!("In the remote syscall function!!");
         match syscall {
             syscall::Syscall::COMMAND {
                 driver_number,
@@ -201,13 +207,13 @@ impl kernel::Platform for Imix {
                 if self.remote_system_call.determine_route(*driver_number) == 0 {
                     return Ok(());
                 }
-                self.remote_system_call.fill_buffer(2,
+                self.remote_system_call.fill_buffer(COMMAND_NUM, 
                                                     *driver_number,
                                                     *subdriver_number,
                                                     *arg0,
                                                     *arg1);
                 self.remote_system_call.send_data();
-                self.remote_system_call.enqueue_process(process.get_process_name());
+                self.remote_system_call.enqueue_process(process.appid().id());
                 return core::prelude::v1::Err(ReturnCode::EBUSY);
             },
             syscall::Syscall::ALLOW {
@@ -219,13 +225,13 @@ impl kernel::Platform for Imix {
                 if self.remote_system_call.determine_route(*driver_number) == 0 {
                     return Ok(());
                 }
-                self.remote_system_call.fill_buffer(3,
+                self.remote_system_call.fill_buffer(ALLOW_NUM,
                                                     *driver_number,
                                                     *subdriver_number,
                                                     *allow_address as usize,
                                                     *allow_size);
                 self.remote_system_call.send_data();
-                self.remote_system_call.enqueue_process(process.get_process_name());
+                self.remote_system_call.enqueue_process(process.appid().id());
                 core::prelude::v1::Err(ReturnCode::FAIL)
             },
             syscall::Syscall::SUBSCRIBE {
@@ -248,7 +254,7 @@ impl kernel::Platform for Imix {
                     None => return core::prelude::v1::Err(ReturnCode::FAIL),
                 };
 
-                self.remote_system_call.enqueue_process(process.get_process_name());
+                self.remote_system_call.enqueue_process(process.appid().id());
                 core::prelude::v1::Err(ReturnCode::FAIL)
             },
             _ => Ok(()),
@@ -417,14 +423,15 @@ pub unsafe fn reset_handler() {
         .finalize(components::spi_component_helper!(sam4l::spi::SpiHw));
     let remote_pin = &sam4l::gpio::PC[31];
     let remote_system_call = static_init!(capsules::system_call_interface::RemoteSystemCall<'static, Capability>,
-                                          RemoteSystemCall::new(&mut BUF,
+                                          RemoteSystemCall::new(&mut BUF, 
                                                                 &mut BUF_CLI,
-                                                                &mut DATA,
-                                                                &mut CLIENT,
+                                                                &mut DATA, 
+                                                                &mut CLIENT, 
                                                                 remote_spi,
                                                                 remote_pin,
                                                                 board_kernel,
                                                                 Capability,
+                                                                &mut ID,
                                                                 ));
     remote_spi.set_client(remote_system_call);
     remote_pin.set_client(remote_system_call);

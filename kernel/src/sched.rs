@@ -647,12 +647,7 @@ impl Kernel {
                             // exhausted its timeslice) allowing the process to
                             // decide how to handle the error.
                             if syscall != Syscall::YIELD {
-                                debug!("Syscalls upcoming!");
                                 if let Err(_response) = platform.remote_syscall(process, &syscall) {
-                                    /*if response == ReturnCode::EBUSY {
-                                        process.set_syscall_return_value(1);
-                                    }*/
-                                    debug!("System call is now remote");
                                     process.set_waiting_state();
                                     continue;
                                 }
@@ -889,12 +884,6 @@ impl Kernel {
                 }
                 process::State::WaitingOnRemote => {
                     return_reason = StoppedExecutingReason::Stopped;
-                    continue;
-                }
-                process::State::ReturnRemoteValue => {
-                    debug!("Return Remote Value!");
-                    /*process.set_syscall_return_value(1);
-                    process.resume();*/
                     continue;
                 }
             }
